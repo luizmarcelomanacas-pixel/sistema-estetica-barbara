@@ -187,7 +187,9 @@ except:
     st.stop()
 
 
-# --- FUNÇÃO PDF ---
+# --- FUNÇÕES DE PDF ---
+
+# 1. PDF Gerencial (Fluxo de Caixa)
 def gerar_pdf_fluxo(df_dados, periodo_texto, tot_rec, tot_desp, saldo):
     pdf = FPDF()
     pdf.add_page()
@@ -195,63 +197,114 @@ def gerar_pdf_fluxo(df_dados, periodo_texto, tot_rec, tot_desp, saldo):
     pdf.cell(0, 10, txt="Relatorio de Fluxo de Caixa", ln=1, align='C')
     pdf.set_font("Arial", 'I', 10)
     pdf.cell(0, 10, txt="Clinica Estetica Barbara Castro", ln=1, align='C')
-    pdf.line(10, 30, 200, 30)
+    pdf.line(10, 30, 200, 30);
     pdf.ln(5)
 
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 10, txt=f"Periodo: {periodo_texto}", ln=1, align='L')
 
-    pdf.set_fill_color(240, 240, 240)
-    pdf.rect(10, 50, 190, 25, 'F')
+    pdf.set_fill_color(240, 240, 240);
+    pdf.rect(10, 50, 190, 25, 'F');
     pdf.set_y(55)
-
     pdf.set_font("Arial", 'B', 10)
-    pdf.cell(63, 5, "Total Receitas", align='C')
-    pdf.cell(63, 5, "Total Despesas", align='C')
-    pdf.cell(63, 5, "Saldo Liquido", align='C')
+    pdf.cell(63, 5, "Total Receitas", align='C');
+    pdf.cell(63, 5, "Total Despesas", align='C');
+    pdf.cell(63, 5, "Saldo Liquido", align='C');
     pdf.ln(8)
 
     pdf.set_font("Arial", 'B', 12)
-    pdf.set_text_color(0, 100, 0)
+    pdf.set_text_color(0, 100, 0);
     pdf.cell(63, 5, f"+ R$ {tot_rec:,.2f}", align='C')
-    pdf.set_text_color(150, 0, 0)
+    pdf.set_text_color(150, 0, 0);
     pdf.cell(63, 5, f"- R$ {tot_desp:,.2f}", align='C')
     if saldo >= 0:
         pdf.set_text_color(0, 0, 0)
     else:
         pdf.set_text_color(255, 0, 0)
-    pdf.cell(63, 5, f"R$ {saldo:,.2f}", align='C')
-    pdf.set_text_color(0, 0, 0)
-
+    pdf.cell(63, 5, f"R$ {saldo:,.2f}", align='C');
+    pdf.set_text_color(0, 0, 0);
     pdf.ln(20)
-    pdf.set_font("Arial", 'B', 10)
-    pdf.set_fill_color(212, 175, 55)
-    pdf.set_text_color(255, 255, 255)
-    pdf.cell(25, 8, "Data", 1, 0, 'C', True)
-    pdf.cell(95, 8, "Descricao", 1, 0, 'C', True)
-    pdf.cell(30, 8, "Tipo", 1, 0, 'C', True)
-    pdf.cell(40, 8, "Valor", 1, 1, 'C', True)
-    pdf.set_text_color(0, 0, 0)
-    pdf.set_font("Arial", size=9)
 
+    pdf.set_font("Arial", 'B', 10);
+    pdf.set_fill_color(212, 175, 55);
+    pdf.set_text_color(255, 255, 255)
+    pdf.cell(25, 8, "Data", 1, 0, 'C', True);
+    pdf.cell(95, 8, "Descricao", 1, 0, 'C', True);
+    pdf.cell(30, 8, "Tipo", 1, 0, 'C', True);
+    pdf.cell(40, 8, "Valor", 1, 1, 'C', True)
+
+    pdf.set_text_color(0, 0, 0);
+    pdf.set_font("Arial", size=9)
     for i, row in df_dados.iterrows():
         try:
             d_fmt = datetime.strptime(str(row['Data']), '%Y-%m-%d').strftime('%d/%m/%Y')
         except:
             d_fmt = str(row['Data'])
         desc = row['Descrição'].encode('latin-1', 'replace').decode('latin-1')[:45]
-        tipo = row['Tipo']
+        tipo = row['Tipo'];
         val_str = f"R$ {row['Valor']:,.2f}"
-
-        pdf.cell(25, 7, d_fmt, 1)
+        pdf.cell(25, 7, d_fmt, 1);
         pdf.cell(95, 7, desc, 1)
         if tipo == 'Receita':
             pdf.set_text_color(0, 100, 0)
         else:
             pdf.set_text_color(150, 0, 0)
-        pdf.cell(30, 7, tipo, 1, 0, 'C')
-        pdf.set_text_color(0, 0, 0)
+        pdf.cell(30, 7, tipo, 1, 0, 'C');
+        pdf.set_text_color(0, 0, 0);
         pdf.cell(40, 7, val_str, 1, 1, 'R')
+    return pdf.output(dest='S').encode('latin-1')
+
+
+# 2. PDF Individual (Ficha do Cliente)
+def gerar_ficha_pdf(dados_cliente):
+    pdf = FPDF()
+    pdf.add_page()
+
+    # Cabeçalho
+    pdf.set_font("Arial", 'B', 18)
+    pdf.cell(0, 10, "Ficha Clinica - Anamnese", ln=1, align='C')
+    pdf.set_font("Arial", 'I', 10)
+    pdf.cell(0, 10, "Estetica Avancada Barbara Castro", ln=1, align='C')
+    pdf.line(10, 30, 200, 30)
+    pdf.ln(10)
+
+    # Tratamento de Strings (Acentos)
+    nome = dados_cliente['nome'].encode('latin-1', 'replace').decode('latin-1')
+    tel = dados_cliente['telefone']
+    try:
+        dn = datetime.strptime(str(dados_cliente['data_nascimento']), '%Y-%m-%d').strftime('%d/%m/%Y')
+    except:
+        dn = "--/--/----"
+    hist = dados_cliente['anamnese'].encode('latin-1', 'replace').decode('latin-1') if dados_cliente[
+        'anamnese'] else "Nenhum historico registrado."
+
+    # Dados Pessoais
+    pdf.set_fill_color(240, 240, 240)
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(0, 10, "1. Dados Pessoais", 1, 1, 'L', True)
+
+    pdf.set_font("Arial", '', 11)
+    pdf.ln(2)
+    pdf.cell(30, 8, "Nome:", 0);
+    pdf.cell(0, 8, nome, 0, 1)
+    pdf.cell(30, 8, "Telefone:", 0);
+    pdf.cell(0, 8, tel, 0, 1)
+    pdf.cell(30, 8, "Nascimento:", 0);
+    pdf.cell(0, 8, dn, 0, 1)
+    pdf.ln(5)
+
+    # Histórico / Anamnese
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(0, 10, "2. Historico Clinico / Anamnese", 1, 1, 'L', True)
+    pdf.ln(3)
+
+    pdf.set_font("Arial", '', 11)
+    # MultiCell permite que o texto quebre linhas automaticamente
+    pdf.multi_cell(0, 7, hist)
+
+    pdf.ln(10)
+    pdf.set_font("Arial", 'I', 8)
+    pdf.cell(0, 10, f"Documento gerado em {date.today().strftime('%d/%m/%Y')}", 0, 1, 'R')
 
     return pdf.output(dest='S').encode('latin-1')
 
@@ -262,28 +315,15 @@ with st.sidebar:
         st.image("Barbara.jpeg", width=130)
     else:
         st.image("https://api.dicebear.com/7.x/avataaars/svg?seed=Barbara&backgroundColor=ffdfbf", width=80)
-
     st.markdown(
         "<div style='text-align:center;margin-bottom:25px;'><h3>Bárbara Castro</h3><p style='color:#d4af37;font-size:11px;font-weight:700;'>ADMIN ESPECIALISTA</p></div>",
         unsafe_allow_html=True)
-
     menu = st.radio("NAVEGAÇÃO",
                     ["Dashboard", "Agenda", "Clientes", "Procedimentos", "Financeiro", "Relatórios", "AI Insights"])
-
-    # --- ÁREA DE BACKUP NA SIDEBAR ---
     st.markdown("---")
     st.markdown("### 🔐 Segurança")
-    st.markdown("<span style='font-size:12px; color:gray;'>Baixe o backup diariamente!</span>", unsafe_allow_html=True)
-
-    # Botão de Download do Banco de Dados (.db)
     with open("clinica_gold.db", "rb") as fp:
-        btn = st.download_button(
-            label="💾 Baixar Backup (Banco de Dados)",
-            data=fp,
-            file_name=f"backup_clinica_{date.today()}.db",
-            mime="application/x-sqlite3",
-            help="Clique aqui para salvar todos os dados da clínica no seu computador."
-        )
+        st.download_button("💾 Baixar Backup", fp, f"backup_{date.today()}.db", "application/x-sqlite3")
 
 # --- DASHBOARD ---
 if menu == "Dashboard":
@@ -358,7 +398,7 @@ elif menu == "Agenda":
 # --- CLIENTES ---
 elif menu == "Clientes":
     st.title("Clientes")
-    t1, t2 = st.tabs(["Novo", "Ficha"])
+    t1, t2 = st.tabs(["Novo", "Ficha Completa"])
     with t1:
         with st.form("nc"):
             n = st.text_input("Nome");
@@ -384,12 +424,28 @@ elif menu == "Clientes":
                 except:
                     dv = date.today()
                 ed = st.date_input("Nasc", dv, min_value=date(1900, 1, 1), format="DD/MM/YYYY");
-                ea = st.text_area("Anamnese", cdata['anamnese'] if cdata['anamnese'] else "")
-                if st.form_submit_button("Salvar"): conn.execute(
+                ea = st.text_area("Anamnese", cdata['anamnese'] if cdata['anamnese'] else "", height=200)
+                if st.form_submit_button("Salvar Alterações"): conn.execute(
                     "UPDATE clientes SET nome=?, telefone=?, data_nascimento=?, anamnese=? WHERE id=?",
                     (en, et, str(ed), ea, cid)); conn.commit(); st.rerun()
-            if st.button("Excluir", type="secondary"): conn.execute("DELETE FROM clientes WHERE id=?",
-                                                                    (cid,)); conn.commit(); st.rerun()
+
+            # --- ÁREA DE AÇÕES (EXCLUIR E PDF) ---
+            st.markdown("---")
+            col_act1, col_act2 = st.columns(2)
+
+            with col_act1:
+                # Botão de Gerar PDF da Ficha
+                pdf_bytes = gerar_ficha_pdf(cdata)
+                st.download_button(
+                    label="📄 Baixar Ficha de Anamnese (PDF)",
+                    data=pdf_bytes,
+                    file_name=f"Ficha_{cdata['nome'].replace(' ', '_')}.pdf",
+                    mime="application/pdf"
+                )
+
+            with col_act2:
+                if st.button("🗑️ Excluir Cliente", type="secondary"): conn.execute("DELETE FROM clientes WHERE id=?",
+                                                                                   (cid,)); conn.commit(); st.rerun()
 
 # --- PROCEDIMENTOS ---
 elif menu == "Procedimentos":
