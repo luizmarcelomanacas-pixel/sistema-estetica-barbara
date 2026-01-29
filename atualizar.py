@@ -22,7 +22,8 @@ def atualizar_github():
     print("3. Enviando para a nuvem...")
     resultado = os.system("git push -u origin main")
 
-    if resultad == 0:
+    # CORREÇÃO: A variável agora está escrita certa (resultado)
+    if resultado == 0:
         print("\n✅ Sucesso! O sistema foi atualizado.")
         print("O Streamlit Cloud irá reiniciar automaticamente em instantes.")
     else:
