@@ -39,10 +39,16 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-# --- BANCO DE DADOS ---
+# --- BANCO DE DADOS (TURBO MODE & ANTI-TRAVAMENTO) ---
 @st.cache_resource
 def get_db_connection():
-    conn = sqlite3.connect('clinica_gold.db', check_same_thread=False)
+    # timeout=30: Espera até 30 segundos se o banco estiver ocupado (antes era 5s)
+    conn = sqlite3.connect('clinica_gold.db', check_same_thread=False, timeout=30)
+    # WAL Mode: Permite leitura e escrita simultânea muito melhor
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+    except:
+        pass
     return conn
 
 
@@ -139,6 +145,7 @@ def init_db():
                      CURRENT_TIMESTAMP
                  )''')
 
+    # Migrações silenciosas
     try:
         c.execute("ALTER TABLE clientes ADD COLUMN data_nascimento DATE")
         conn.commit()
@@ -332,7 +339,7 @@ elif menu == "Agenda":
                             st.success("Agendado!");
                             st.rerun()
                         except:
-                            st.error("Erro ao agendar. Tente novamente.")
+                            st.error("Erro ao agendar.")
             else:
                 st.warning("Sem clientes.")
         with c2:
@@ -355,7 +362,7 @@ elif menu == "Agenda":
                     try:
                         conn.execute("UPDATE agenda SET status=? WHERE id=?", (ns, aid)); conn.commit(); st.rerun()
                     except:
-                        st.error("Erro no banco. Tente de novo.")
+                        st.error("Erro ao atualizar.")
             with c2:
                 if st.button("Excluir", type="secondary"):
                     try:
@@ -402,7 +409,7 @@ elif menu == "Clientes":
                                      (en, et, str(ed), ea, int(cid))); conn.commit(); st.success("Salvo!"); time.sleep(
                             1); st.rerun()
                     except:
-                        st.error("Erro ao atualizar.")
+                        st.error("Erro ao atualizar. Tente novamente.")
             col1, col2 = st.columns(2)
             with col1:
                 pdf_bytes = gerar_ficha_pdf(cdata)
@@ -414,7 +421,7 @@ elif menu == "Clientes":
                     except:
                         st.error("Erro ao excluir.")
 
-# --- PROCEDIMENTOS (BLINDADO) ---
+# --- PROCEDIMENTOS ---
 elif menu == "Procedimentos":
     st.title("Serviços")
     t1, t2 = st.tabs(["Novo", "Gerenciar"])
@@ -424,7 +431,6 @@ elif menu == "Procedimentos":
             c = st.selectbox("Categoria", ["Injetáveis", "Facial", "Corporal", "Laser"]);
             v = st.number_input("Valor", min_value=0.0);
             d = st.number_input("Minutos", step=15)
-            # --- PROTEÇÃO AQUI ---
             if st.form_submit_button("Salvar"):
                 try:
                     conn.execute("INSERT INTO procedimentos (nome, valor, duracao_min, categoria) VALUES (?,?,?,?)",
@@ -433,10 +439,8 @@ elif menu == "Procedimentos":
                     st.success("Serviço Salvo!")
                     time.sleep(0.5);
                     st.rerun()
-                except sqlite3.OperationalError:
-                    st.error("Banco de dados ocupado. Tente clicar em salvar novamente.")
-                except Exception as e:
-                    st.error(f"Erro: {e}")
+                except:
+                    st.error("Erro ao salvar serviço.")
 
     with t2:
         proc = pd.read_sql("SELECT * FROM procedimentos", conn)
