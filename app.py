@@ -39,10 +39,9 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-# --- BANCO DE DADOS (CORRIGIDO) ---
+# --- BANCO DE DADOS ---
 @st.cache_resource
 def get_db_connection():
-    # check_same_thread=False ajuda a evitar bloqueios em apps simples
     conn = sqlite3.connect('clinica_gold.db', check_same_thread=False)
     return conn
 
@@ -50,8 +49,6 @@ def get_db_connection():
 def init_db():
     conn = get_db_connection()
     c = conn.cursor()
-
-    # Criação das tabelas
     c.execute('''CREATE TABLE IF NOT EXISTS clientes
                  (
                      id
@@ -142,8 +139,6 @@ def init_db():
                      CURRENT_TIMESTAMP
                  )''')
 
-    # --- CORREÇÃO DAS MIGRAÇÕES ---
-    # Tenta criar as colunas e FORÇA O COMMIT logo em seguida
     try:
         c.execute("ALTER TABLE clientes ADD COLUMN data_nascimento DATE")
         conn.commit()
@@ -156,14 +151,12 @@ def init_db():
     except:
         pass
 
-    # Dados Iniciais
     c.execute("SELECT count(*) FROM procedimentos")
     if c.fetchone()[0] == 0:
         dados = [('Botox Full Face', 1200.00, 45, 'Injetáveis'), ('Preenchimento Labial', 1500.00, 60, 'Injetáveis'),
                  ('Limpeza de Pele', 250.00, 90, 'Estética Facial'), ('Bioestimulador', 2200.00, 60, 'Injetáveis')]
         c.executemany("INSERT INTO procedimentos (nome, valor, duracao_min, categoria) VALUES (?,?,?,?)", dados)
         conn.commit()
-
     return conn
 
 
@@ -179,7 +172,7 @@ def gerar_pdf_fluxo(df_dados, periodo_texto, tot_rec, tot_desp, saldo):
     pdf.add_page()
     pdf.set_font("Arial", 'B', 16)
     pdf.cell(0, 10, txt="Relatorio de Fluxo de Caixa", ln=1, align='C')
-    pdf.set_font("Arial", 'I', 10)
+    pdf.set_font("Arial", 'I', 10);
     pdf.cell(0, 10, txt="Clinica Estetica Barbara Castro", ln=1, align='C')
     pdf.line(10, 30, 200, 30);
     pdf.ln(5)
@@ -290,24 +283,49 @@ with st.sidebar:
     with open("clinica_gold.db", "rb") as fp:
         st.download_button("💾 Baixar Backup", fp, f"backup_{date.today()}.db", "application/x-sqlite3")
 
-# --- MENU DASHBOARD ---
+# --- DASHBOARD (ATUALIZADO PARA CLIENTES DO DIA) ---
 if menu == "Dashboard":
     st.title("Bem-vinda, Bárbara")
-    df_ag = pd.read_sql("SELECT * FROM agenda", conn)
+
+    # Métricas Gerais
     df_cli = pd.read_sql("SELECT * FROM clientes", conn)
     df_fin = pd.read_sql(
         "SELECT SUM(p.valor) as total FROM agenda a JOIN procedimentos p ON a.procedimento_id = p.id WHERE a.status = 'Concluído'",
         conn)
+    # Busca agendamentos apenas de HOJE para a métrica
+    df_hoje_count = pd.read_sql(f"SELECT * FROM agenda WHERE data_agendamento = '{date.today()}'", conn)
+
     rec = df_fin['total'][0] if df_fin['total'][0] else 0.0
+
     c1, c2, c3 = st.columns(3)
-    c1.metric("Faturamento", f"R$ {rec:,.2f}");
-    c2.metric("Clientes", len(df_cli));
-    c3.metric("Hoje", len(df_ag[df_ag['data_agendamento'] == str(date.today())]))
-    if not df_ag.empty:
-        st.markdown("### 📅 Agenda Recente")
-        st.dataframe(pd.read_sql(
-            "SELECT a.data_agendamento as Data, a.hora_agendamento as Hora, c.nome as Cliente, p.nome as Servico, a.status FROM agenda a JOIN clientes c ON a.cliente_id = c.id JOIN procedimentos p ON a.procedimento_id = p.id WHERE a.status = 'Agendado' ORDER BY a.data_agendamento LIMIT 5",
-            conn), use_container_width=True, hide_index=True)
+    c1.metric("Faturamento Total", f"R$ {rec:,.2f}")
+    c2.metric("Total Clientes", len(df_cli))
+    c3.metric("Agendados Hoje", len(df_hoje_count))
+
+    st.markdown("---")
+    st.markdown(f"### 📅 Clientes do Dia ({date.today().strftime('%d/%m/%Y')})")
+
+    # Query específica para mostrar TUDO do dia de hoje, ordenado por hora
+    query_dia = f"""
+        SELECT 
+            a.hora_agendamento as Hora, 
+            c.nome as Cliente, 
+            p.nome as Procedimento, 
+            a.status as Status,
+            c.telefone as Telefone
+        FROM agenda a 
+        JOIN clientes c ON a.cliente_id = c.id 
+        JOIN procedimentos p ON a.procedimento_id = p.id 
+        WHERE a.data_agendamento = '{date.today()}'
+        ORDER BY a.hora_agendamento ASC
+    """
+    df_dia = pd.read_sql(query_dia, conn)
+
+    if not df_dia.empty:
+        # Mostra a tabela completa do dia
+        st.dataframe(df_dia, use_container_width=True, hide_index=True)
+    else:
+        st.info(f"Nenhum cliente agendado para hoje ({date.today().strftime('%d/%m/%Y')}). Aproveite o dia! 🌟")
 
 # --- MENU AGENDA ---
 elif menu == "Agenda":
@@ -357,7 +375,7 @@ elif menu == "Agenda":
                 if st.button("Excluir", type="secondary"): conn.execute("DELETE FROM agenda WHERE id=?",
                                                                         (aid,)); conn.commit(); st.rerun()
 
-# --- MENU CLIENTES (COM CORREÇÃO DE UPDATE) ---
+# --- MENU CLIENTES ---
 elif menu == "Clientes":
     st.title("Clientes")
     t1, t2 = st.tabs(["Novo", "Ficha Completa"])
@@ -388,19 +406,16 @@ elif menu == "Clientes":
                 ed = st.date_input("Nasc", dv, min_value=date(1900, 1, 1), format="DD/MM/YYYY");
                 ea = st.text_area("Anamnese", cdata['anamnese'] if cdata['anamnese'] else "", height=200)
 
-                # --- CORREÇÃO DO ERRO DE OPERATIONAL ERROR ---
                 if st.form_submit_button("Salvar Alterações"):
                     try:
                         conn.execute("UPDATE clientes SET nome=?, telefone=?, data_nascimento=?, anamnese=? WHERE id=?",
                                      (en, et, str(ed), ea, int(cid)))
                         conn.commit()
                         st.success("Dados salvos com sucesso!")
-                        time.sleep(1)
+                        time.sleep(1);
                         st.rerun()
                     except sqlite3.OperationalError as e:
-                        st.error(f"⚠️ Banco de dados ocupado. Tente novamente em 2 segundos. ({e})")
-                    except Exception as e:
-                        st.error(f"Erro inesperado: {e}")
+                        st.error(f"Tente novamente. ({e})")
 
             st.markdown("---")
             col1, col2 = st.columns(2)
