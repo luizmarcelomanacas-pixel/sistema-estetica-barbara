@@ -144,7 +144,6 @@ def init_db():
         conn.commit()
     except:
         pass
-
     try:
         c.execute("ALTER TABLE clientes ADD COLUMN anamnese TEXT")
         conn.commit()
@@ -283,51 +282,31 @@ with st.sidebar:
     with open("clinica_gold.db", "rb") as fp:
         st.download_button("💾 Baixar Backup", fp, f"backup_{date.today()}.db", "application/x-sqlite3")
 
-# --- DASHBOARD (ATUALIZADO PARA CLIENTES DO DIA) ---
+# --- DASHBOARD ---
 if menu == "Dashboard":
     st.title("Bem-vinda, Bárbara")
-
-    # Métricas Gerais
     df_cli = pd.read_sql("SELECT * FROM clientes", conn)
     df_fin = pd.read_sql(
         "SELECT SUM(p.valor) as total FROM agenda a JOIN procedimentos p ON a.procedimento_id = p.id WHERE a.status = 'Concluído'",
         conn)
-    # Busca agendamentos apenas de HOJE para a métrica
     df_hoje_count = pd.read_sql(f"SELECT * FROM agenda WHERE data_agendamento = '{date.today()}'", conn)
-
     rec = df_fin['total'][0] if df_fin['total'][0] else 0.0
 
     c1, c2, c3 = st.columns(3)
-    c1.metric("Faturamento Total", f"R$ {rec:,.2f}")
-    c2.metric("Total Clientes", len(df_cli))
+    c1.metric("Faturamento Total", f"R$ {rec:,.2f}");
+    c2.metric("Total Clientes", len(df_cli));
     c3.metric("Agendados Hoje", len(df_hoje_count))
 
     st.markdown("---")
     st.markdown(f"### 📅 Clientes do Dia ({date.today().strftime('%d/%m/%Y')})")
-
-    # Query específica para mostrar TUDO do dia de hoje, ordenado por hora
-    query_dia = f"""
-        SELECT 
-            a.hora_agendamento as Hora, 
-            c.nome as Cliente, 
-            p.nome as Procedimento, 
-            a.status as Status,
-            c.telefone as Telefone
-        FROM agenda a 
-        JOIN clientes c ON a.cliente_id = c.id 
-        JOIN procedimentos p ON a.procedimento_id = p.id 
-        WHERE a.data_agendamento = '{date.today()}'
-        ORDER BY a.hora_agendamento ASC
-    """
+    query_dia = f"SELECT a.hora_agendamento as Hora, c.nome as Cliente, p.nome as Procedimento, a.status as Status, c.telefone as Telefone FROM agenda a JOIN clientes c ON a.cliente_id = c.id JOIN procedimentos p ON a.procedimento_id = p.id WHERE a.data_agendamento = '{date.today()}' ORDER BY a.hora_agendamento ASC"
     df_dia = pd.read_sql(query_dia, conn)
-
     if not df_dia.empty:
-        # Mostra a tabela completa do dia
         st.dataframe(df_dia, use_container_width=True, hide_index=True)
     else:
-        st.info(f"Nenhum cliente agendado para hoje ({date.today().strftime('%d/%m/%Y')}). Aproveite o dia! 🌟")
+        st.info(f"Nenhum cliente agendado para hoje.")
 
-# --- MENU AGENDA ---
+# --- AGENDA ---
 elif menu == "Agenda":
     st.title("Agenda")
     t1, t2 = st.tabs(["Agendar", "Gerenciar"])
@@ -345,12 +324,15 @@ elif menu == "Agenda":
                     dt = st.date_input("Data", format="DD/MM/YYYY");
                     hr = st.time_input("Hora")
                     if st.form_submit_button("Confirmar"):
-                        conn.execute(
-                            "INSERT INTO agenda (cliente_id, procedimento_id, data_agendamento, hora_agendamento, status) VALUES (?,?,?,?,?)",
-                            (cd[c_s], pd_dic[p_s], dt, str(hr), "Agendado"));
-                        conn.commit();
-                        st.success("Agendado!");
-                        st.rerun()
+                        try:
+                            conn.execute(
+                                "INSERT INTO agenda (cliente_id, procedimento_id, data_agendamento, hora_agendamento, status) VALUES (?,?,?,?,?)",
+                                (cd[c_s], pd_dic[p_s], dt, str(hr), "Agendado"));
+                            conn.commit();
+                            st.success("Agendado!");
+                            st.rerun()
+                        except:
+                            st.error("Erro ao agendar. Tente novamente.")
             else:
                 st.warning("Sem clientes.")
         with c2:
@@ -369,13 +351,19 @@ elif menu == "Agenda":
             with c1:
                 ns = st.selectbox("Status", ["Agendado", "Concluído", "Cancelado"],
                                   index=["Agendado", "Concluído", "Cancelado"].index(curr))
-                if st.button("Atualizar"): conn.execute("UPDATE agenda SET status=? WHERE id=?",
-                                                        (ns, aid)); conn.commit(); st.rerun()
+                if st.button("Atualizar"):
+                    try:
+                        conn.execute("UPDATE agenda SET status=? WHERE id=?", (ns, aid)); conn.commit(); st.rerun()
+                    except:
+                        st.error("Erro no banco. Tente de novo.")
             with c2:
-                if st.button("Excluir", type="secondary"): conn.execute("DELETE FROM agenda WHERE id=?",
-                                                                        (aid,)); conn.commit(); st.rerun()
+                if st.button("Excluir", type="secondary"):
+                    try:
+                        conn.execute("DELETE FROM agenda WHERE id=?", (aid,)); conn.commit(); st.rerun()
+                    except:
+                        st.error("Erro ao excluir.")
 
-# --- MENU CLIENTES ---
+# --- CLIENTES ---
 elif menu == "Clientes":
     st.title("Clientes")
     t1, t2 = st.tabs(["Novo", "Ficha Completa"])
@@ -385,9 +373,12 @@ elif menu == "Clientes":
             t = st.text_input("Tel");
             d = st.date_input("Nasc", min_value=date(1900, 1, 1), format="DD/MM/YYYY");
             a = st.text_area("Anamnese")
-            if st.form_submit_button("Salvar"): conn.execute(
-                "INSERT INTO clientes (nome, telefone, data_nascimento, anamnese) VALUES (?,?,?,?)",
-                (n, t, d, a)); conn.commit(); st.rerun()
+            if st.form_submit_button("Salvar"):
+                try:
+                    conn.execute("INSERT INTO clientes (nome, telefone, data_nascimento, anamnese) VALUES (?,?,?,?)",
+                                 (n, t, d, a)); conn.commit(); st.rerun()
+                except:
+                    st.error("Erro ao salvar cliente.")
         st.dataframe(pd.read_sql("SELECT id, nome, telefone FROM clientes ORDER BY id DESC", conn),
                      use_container_width=True)
     with t2:
@@ -405,28 +396,25 @@ elif menu == "Clientes":
                     dv = date.today()
                 ed = st.date_input("Nasc", dv, min_value=date(1900, 1, 1), format="DD/MM/YYYY");
                 ea = st.text_area("Anamnese", cdata['anamnese'] if cdata['anamnese'] else "", height=200)
-
                 if st.form_submit_button("Salvar Alterações"):
                     try:
                         conn.execute("UPDATE clientes SET nome=?, telefone=?, data_nascimento=?, anamnese=? WHERE id=?",
-                                     (en, et, str(ed), ea, int(cid)))
-                        conn.commit()
-                        st.success("Dados salvos com sucesso!")
-                        time.sleep(1);
-                        st.rerun()
-                    except sqlite3.OperationalError as e:
-                        st.error(f"Tente novamente. ({e})")
-
-            st.markdown("---")
+                                     (en, et, str(ed), ea, int(cid))); conn.commit(); st.success("Salvo!"); time.sleep(
+                            1); st.rerun()
+                    except:
+                        st.error("Erro ao atualizar.")
             col1, col2 = st.columns(2)
             with col1:
                 pdf_bytes = gerar_ficha_pdf(cdata)
                 st.download_button("📄 Baixar Ficha PDF", pdf_bytes, f"Ficha_{cdata['nome']}.pdf", "application/pdf")
             with col2:
-                if st.button("🗑️ Excluir Cliente", type="secondary"): conn.execute("DELETE FROM clientes WHERE id=?",
-                                                                                   (cid,)); conn.commit(); st.rerun()
+                if st.button("🗑️ Excluir Cliente", type="secondary"):
+                    try:
+                        conn.execute("DELETE FROM clientes WHERE id=?", (cid,)); conn.commit(); st.rerun()
+                    except:
+                        st.error("Erro ao excluir.")
 
-# --- MENU PROCEDIMENTOS ---
+# --- PROCEDIMENTOS (BLINDADO) ---
 elif menu == "Procedimentos":
     st.title("Serviços")
     t1, t2 = st.tabs(["Novo", "Gerenciar"])
@@ -436,9 +424,20 @@ elif menu == "Procedimentos":
             c = st.selectbox("Categoria", ["Injetáveis", "Facial", "Corporal", "Laser"]);
             v = st.number_input("Valor", min_value=0.0);
             d = st.number_input("Minutos", step=15)
-            if st.form_submit_button("Salvar"): conn.execute(
-                "INSERT INTO procedimentos (nome, valor, duracao_min, categoria) VALUES (?,?,?,?)",
-                (n, v, d, c)); conn.commit(); st.rerun()
+            # --- PROTEÇÃO AQUI ---
+            if st.form_submit_button("Salvar"):
+                try:
+                    conn.execute("INSERT INTO procedimentos (nome, valor, duracao_min, categoria) VALUES (?,?,?,?)",
+                                 (n, v, d, c))
+                    conn.commit()
+                    st.success("Serviço Salvo!")
+                    time.sleep(0.5);
+                    st.rerun()
+                except sqlite3.OperationalError:
+                    st.error("Banco de dados ocupado. Tente clicar em salvar novamente.")
+                except Exception as e:
+                    st.error(f"Erro: {e}")
+
     with t2:
         proc = pd.read_sql("SELECT * FROM procedimentos", conn)
         if not proc.empty:
@@ -448,12 +447,19 @@ elif menu == "Procedimentos":
             with st.form("ep"):
                 pn = st.text_input("Nome", pdata['nome']);
                 pv = st.number_input("Valor", value=pdata['valor'])
-                if st.form_submit_button("Atualizar"): conn.execute(
-                    "UPDATE procedimentos SET nome=?, valor=? WHERE id=?", (pn, pv, pid)); conn.commit(); st.rerun()
-            if st.button("Excluir", type="secondary"): conn.execute("DELETE FROM procedimentos WHERE id=?",
-                                                                    (pid,)); conn.commit(); st.rerun()
+                if st.form_submit_button("Atualizar"):
+                    try:
+                        conn.execute("UPDATE procedimentos SET nome=?, valor=? WHERE id=?",
+                                     (pn, pv, pid)); conn.commit(); st.rerun()
+                    except:
+                        st.error("Erro ao atualizar.")
+            if st.button("Excluir", type="secondary"):
+                try:
+                    conn.execute("DELETE FROM procedimentos WHERE id=?", (pid,)); conn.commit(); st.rerun()
+                except:
+                    st.error("Erro ao excluir.")
 
-# --- MENU FINANCEIRO ---
+# --- FINANCEIRO ---
 elif menu == "Financeiro":
     st.title("Fluxo de Caixa")
     t1, t2, t3 = st.tabs(["Resumo", "Nova Despesa", "Histórico"])
@@ -479,18 +485,24 @@ elif menu == "Financeiro":
             d = st.text_input("Descrição");
             v = st.number_input("Valor", min_value=0.0);
             dt = st.date_input("Data", format="DD/MM/YYYY")
-            if st.form_submit_button("Lançar"): conn.execute(
-                "INSERT INTO despesas (descricao, valor, data_despesa, categoria) VALUES (?,?,?,?)",
-                (d, v, dt, "Geral")); conn.commit(); st.rerun()
+            if st.form_submit_button("Lançar"):
+                try:
+                    conn.execute("INSERT INTO despesas (descricao, valor, data_despesa, categoria) VALUES (?,?,?,?)",
+                                 (d, v, dt, "Geral")); conn.commit(); st.rerun()
+                except:
+                    st.error("Erro ao salvar despesa.")
     with t3:
         dlist = pd.read_sql("SELECT id, data_despesa, descricao, valor FROM despesas ORDER BY data_despesa DESC", conn)
         if not dlist.empty:
             did = st.selectbox("Excluir", dlist['id'].tolist(),
                                format_func=lambda x: f"{x} - {dlist[dlist['id'] == x].iloc[0]['descricao']}")
-            if st.button("Apagar", type="secondary"): conn.execute("DELETE FROM despesas WHERE id=?",
-                                                                   (did,)); conn.commit(); st.rerun()
+            if st.button("Apagar", type="secondary"):
+                try:
+                    conn.execute("DELETE FROM despesas WHERE id=?", (did,)); conn.commit(); st.rerun()
+                except:
+                    st.error("Erro ao apagar.")
 
-# --- MENU RELATÓRIOS ---
+# --- RELATÓRIOS ---
 elif menu == "Relatórios":
     st.title("📊 Relatórios")
     c1, c2 = st.columns(2);
@@ -519,7 +531,7 @@ elif menu == "Relatórios":
     else:
         st.info("Sem dados.")
 
-# --- MENU AI INSIGHTS ---
+# --- AI INSIGHTS ---
 elif menu == "AI Insights":
     st.title("CRM Inteligente")
     mes = datetime.now().month;
