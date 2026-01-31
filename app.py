@@ -4,11 +4,12 @@ import pandas as pd
 from datetime import datetime, date
 import time
 import os
+import io
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
-# Tenta importar FPDF
+# Tenta importar FPDF para PDFs
 try:
     from fpdf import FPDF
 except:
@@ -23,21 +24,30 @@ EMAIL_DESTINATARIO = 'seu.email@gmail.com'  # Para onde vai a agenda
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Estética Avançada Bárbara Castro", layout="wide", page_icon="✨")
 
-# --- DESIGN VISUAL ---
+# --- DESIGN VISUAL PREMIUM ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Playfair+Display:wght@400;600;700&display=swap');
+
     .stApp { background: linear-gradient(135deg, #fffcf9 0%, #fcf5f0 50%, #f4eadd 100%); font-family: 'Inter', sans-serif; color: #4a4a4a; }
     h1, h2, h3 { font-family: 'Playfair Display', serif !important; color: #2c2c2c; }
     [data-testid="stSidebar"] { background-color: #ffffff; border-right: 1px solid #f0e6d2; }
-    .stButton>button { background: linear-gradient(90deg, #d4af37 0%, #e6c86e 100%); color: white; border: none; border-radius: 8px; font-weight: 500; width: 100%; transition: all 0.3s; }
-    .stButton>button:hover { transform: translateY(-2px); box-shadow: 0 4px 10px rgba(212, 175, 55, 0.3); }
-    [data-testid="stMetric"] { background-color: rgba(255,255,255,0.8); border-radius: 12px; border: 1px solid #f5efe6; padding: 10px; }
-    [data-testid="stDataFrame"] { background-color: rgba(255,255,255,0.9); border-radius: 15px; padding: 10px; }
+
+    .stButton>button {
+        background: linear-gradient(90deg, #d4af37 0%, #e6c86e 100%); color: white; border: none; border-radius: 8px; font-weight: 500;
+        transition: all 0.3s ease; text-transform: uppercase; font-size: 14px; box-shadow: 0 4px 6px rgba(212, 175, 55, 0.2); width: 100%;
+    }
+    .stButton>button:hover { transform: translateY(-2px); box-shadow: 0 6px 12px rgba(212, 175, 55, 0.3); }
+    button[kind="secondary"] { background: linear-gradient(90deg, #ff6b6b 0%, #ff8787 100%) !important; }
+
+    [data-testid="stMetric"] { background-color: rgba(255, 255, 255, 0.8); padding: 15px; border-radius: 12px; border: 1px solid #f5efe6; box-shadow: 0 4px 6px rgba(0,0,0,0.03); }
+    [data-testid="stDataFrame"] { background-color: rgba(255, 255, 255, 0.9); border: 1px solid #f0e6d2; border-radius: 15px; padding: 15px; }
+
+    .stTextInput input, .stDateInput input, .stSelectbox div[data-baseweb="select"], .stNumberInput input { background-color: #ffffff; border: 1px solid #e0dacc; border-radius: 8px; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- BANCO DE DADOS ---
+# --- BANCO DE DADOS (ANTI-TRAVAMENTO) ---
 DB_FILE = 'clinica_gold.db'
 
 
@@ -164,7 +174,6 @@ def init_db():
             conn.execute("ALTER TABLE clientes ADD COLUMN anamnese TEXT")
         except:
             pass
-        # Dados Iniciais
         cur = conn.cursor()
         if cur.execute("SELECT count(*) FROM procedimentos").fetchone()[0] == 0:
             cur.executemany("INSERT INTO procedimentos (nome, valor, duracao_min, categoria) VALUES (?,?,?,?)",
@@ -181,7 +190,6 @@ def enviar_agenda_email():
     try:
         conn = sqlite3.connect(DB_FILE, check_same_thread=False)
         hoje = date.today()
-        # Pega a agenda de HOJE
         query = f"""
             SELECT a.hora_agendamento, c.nome, p.nome as proc 
             FROM agenda a 
@@ -193,7 +201,6 @@ def enviar_agenda_email():
         df = pd.read_sql(query, conn)
         conn.close()
 
-        # Monta o E-mail
         msg = MIMEMultipart()
         msg['From'] = EMAIL_REMETENTE
         msg['To'] = EMAIL_DESTINATARIO
@@ -204,29 +211,78 @@ def enviar_agenda_email():
         else:
             tabela_html = """<table style='width:100%; border-collapse: collapse; font-family: Arial;'>
             <tr style='background-color: #d4af37; color: white;'><th style='padding:10px;'>Hora</th><th style='padding:10px;'>Cliente</th><th style='padding:10px;'>Procedimento</th></tr>"""
-
             for i, row in df.iterrows():
                 hora = str(row['hora_agendamento'])[:5]
                 tabela_html += f"<tr style='border-bottom: 1px solid #ddd;'><td style='padding:10px; text-align:center'><b>{hora}</b></td><td style='padding:10px;'>{row['nome']}</td><td style='padding:10px;'>{row['proc']}</td></tr>"
             tabela_html += "</table>"
-
             corpo_html = f"<h3>Bom dia! Aqui está sua agenda de hoje:</h3>{tabela_html}<br><p>Sistema de Gestão Bárbara Castro ✨</p>"
 
         msg.attach(MIMEText(corpo_html, 'html'))
-
-        # Envia via Gmail
         server = smtplib.SMTP('smtp.gmail.com', 587)
         server.starttls()
         server.login(EMAIL_REMETENTE, EMAIL_SENHA)
         server.send_message(msg)
         server.quit()
         return "✅ E-mail enviado com sucesso!"
-
     except Exception as e:
-        return f"❌ Erro ao enviar e-mail: {e}"
+        return f"❌ Erro: {e}"
 
 
-# --- FUNÇÕES PDF ---
+# --- FUNÇÕES RELATÓRIO PDF ---
+def gerar_pdf_fluxo(df_dados, periodo_texto, tot_rec, tot_desp, saldo):
+    pdf = FPDF();
+    pdf.add_page()
+    pdf.set_font("Arial", 'B', 16);
+    pdf.cell(0, 10, txt="Relatorio de Fluxo de Caixa", ln=1, align='C')
+    pdf.set_font("Arial", 'I', 10);
+    pdf.cell(0, 10, txt="Clinica Estetica Barbara Castro", ln=1, align='C')
+    pdf.line(10, 30, 200, 30);
+    pdf.ln(5)
+    pdf.set_font("Arial", 'B', 12);
+    pdf.cell(0, 10, txt=f"Periodo: {periodo_texto}", ln=1, align='L')
+    pdf.set_fill_color(240, 240, 240);
+    pdf.rect(10, 50, 190, 25, 'F');
+    pdf.set_y(55)
+    pdf.set_font("Arial", 'B', 10)
+    pdf.cell(63, 5, "Total Receitas", align='C');
+    pdf.cell(63, 5, "Total Despesas", align='C');
+    pdf.cell(63, 5, "Saldo Liquido", align='C');
+    pdf.ln(8)
+    pdf.set_font("Arial", 'B', 12);
+    pdf.set_text_color(0, 100, 0);
+    pdf.cell(63, 5, f"+ R$ {tot_rec:,.2f}", align='C')
+    pdf.set_text_color(150, 0, 0);
+    pdf.cell(63, 5, f"- R$ {tot_desp:,.2f}", align='C')
+    pdf.set_text_color(0, 0, 0) if saldo >= 0 else pdf.set_text_color(255, 0, 0);
+    pdf.cell(63, 5, f"R$ {saldo:,.2f}", align='C');
+    pdf.set_text_color(0, 0, 0);
+    pdf.ln(20)
+    pdf.set_font("Arial", 'B', 10);
+    pdf.set_fill_color(212, 175, 55);
+    pdf.set_text_color(255, 255, 255)
+    pdf.cell(25, 8, "Data", 1, 0, 'C', True);
+    pdf.cell(95, 8, "Descricao", 1, 0, 'C', True);
+    pdf.cell(30, 8, "Tipo", 1, 0, 'C', True);
+    pdf.cell(40, 8, "Valor", 1, 1, 'C', True)
+    pdf.set_text_color(0, 0, 0);
+    pdf.set_font("Arial", size=9)
+    for i, row in df_dados.iterrows():
+        try:
+            d_fmt = datetime.strptime(str(row['Data']), '%Y-%m-%d').strftime('%d/%m/%Y')
+        except:
+            d_fmt = str(row['Data'])
+        desc = row['Descrição'].encode('latin-1', 'replace').decode('latin-1')[:45]
+        tipo = row['Tipo'];
+        val_str = f"R$ {row['Valor']:,.2f}"
+        pdf.cell(25, 7, d_fmt, 1);
+        pdf.cell(95, 7, desc, 1)
+        pdf.set_text_color(0, 100, 0) if tipo == 'Receita' else pdf.set_text_color(150, 0, 0)
+        pdf.cell(30, 7, tipo, 1, 0, 'C');
+        pdf.set_text_color(0, 0, 0);
+        pdf.cell(40, 7, val_str, 1, 1, 'R')
+    return pdf.output(dest='S').encode('latin-1')
+
+
 def gerar_ficha_pdf(dados):
     pdf = FPDF();
     pdf.add_page()
@@ -254,17 +310,12 @@ with st.sidebar:
         st.image("Barbara.jpeg", width=130)
     else:
         st.markdown("### 👑 Bárbara Castro")
-    menu = st.radio("NAVEGAÇÃO", ["Dashboard", "Agenda", "Clientes", "Procedimentos", "Financeiro", "Relatórios"])
+    menu = st.radio("NAVEGAÇÃO",
+                    ["Dashboard", "Agenda", "Clientes", "Procedimentos", "Financeiro", "Relatórios", "AI Insights"])
     st.markdown("---")
-
-    # Botão de Teste Manual do Email
-    if st.button("📧 Testar Envio de E-mail"):
+    if st.button("📧 Testar Envio E-mail"):
         res = enviar_agenda_email()
-        if "Sucesso" in res:
-            st.success(res)
-        else:
-            st.error(res)
-
+        st.success(res) if "Sucesso" in res else st.error(res)
     st.markdown("---")
     with open(DB_FILE, "rb") as fp:
         st.download_button("💾 Backup Completo", fp, f"backup_{date.today()}.db")
@@ -280,7 +331,6 @@ if menu == "Dashboard":
     c1.metric("Faturamento", f"R$ {total:,.2f}");
     c2.metric("Agendados Hoje", len(df_hj));
     c3.metric("Dia", date.today().strftime('%d/%m'))
-
     st.markdown(f"### 📅 Clientes de Hoje")
     q_dia = f"SELECT a.hora_agendamento as Hora, c.nome as Cliente, p.nome as Procedimento, a.status FROM agenda a JOIN clientes c ON a.cliente_id=c.id JOIN procedimentos p ON a.procedimento_id=p.id WHERE a.data_agendamento='{date.today()}' ORDER BY Hora"
     df_dia = get_data(q_dia)
@@ -316,49 +366,29 @@ elif menu == "Agenda":
             st.dataframe(get_data(
                 "SELECT a.data_agendamento as Data, a.hora_agendamento as Hora, c.nome, p.nome as Servico, a.status FROM agenda a JOIN clientes c ON a.cliente_id=c.id JOIN procedimentos p ON a.procedimento_id=p.id ORDER BY Data DESC"),
                          use_container_width=True)
-
     with t2:
-        # CORREÇÃO DO GERENCIAR: Mostra os próximos agendamentos ou lista vazia se não houver
-        st.markdown("### Agendamentos Futuros e Recentes")
-
-        # Filtra para mostrar agendamentos de hoje em diante ou todos ordenados
-        q_gerenciar = """
-                      SELECT a.id, c.nome, a.data_agendamento, a.hora_agendamento, p.nome as proc, a.status
-                      FROM agenda a
-                               JOIN clientes c ON a.cliente_id = c.id
-                               JOIN procedimentos p ON a.procedimento_id = p.id
-                      ORDER BY a.data_agendamento DESC, a.hora_agendamento DESC \
-                      """
-        ag = get_data(q_gerenciar)
-
+        st.markdown("### Gerenciar Agendamentos")
+        q_ger = """SELECT a.id, c.nome, a.data_agendamento, a.hora_agendamento, p.nome as proc, a.status \
+                   FROM agenda a \
+                            JOIN clientes c ON a.cliente_id = c.id \
+                            JOIN procedimentos p ON a.procedimento_id = p.id \
+                   ORDER BY a.data_agendamento DESC, a.hora_agendamento DESC"""
+        ag = get_data(q_ger)
         if not ag.empty:
-            # Cria lista para seleção
             op = {f"{r['data_agendamento']} - {r['hora_agendamento'][:5]} - {r['nome']} ({r['status']})": r['id'] for
                   i, r in ag.iterrows()}
-            aid_key = st.selectbox("Selecione um Agendamento para editar:", list(op.keys()))
+            aid_key = st.selectbox("Selecione para editar:", list(op.keys()))
             aid = op[aid_key]
-
-            # Mostra detalhes
-            detalhe = ag[ag['id'] == aid].iloc[0]
-            st.info(f"Cliente: **{detalhe['nome']}** | Serviço: **{detalhe['proc']}**")
-
-            c_edit1, c_edit2 = st.columns(2)
-            if c_edit1.button("✅ Marcar como Concluído"):
-                run_transaction("UPDATE agenda SET status='Concluído' WHERE id=?", (aid,))
-                st.success("Atualizado!");
-                time.sleep(0.5);
-                st.rerun()
-
-            if c_edit2.button("🗑️ Excluir Agendamento", type="secondary"):
-                run_transaction("DELETE FROM agenda WHERE id=?", (aid,))
-                st.success("Excluído!");
-                time.sleep(0.5);
-                st.rerun()
-
-            st.divider()
+            c1, c2 = st.columns(2)
+            if c1.button("✅ Concluir"): run_transaction("UPDATE agenda SET status='Concluído' WHERE id=?",
+                                                        (aid,)); st.success("Atualizado!"); time.sleep(0.5); st.rerun()
+            if c2.button("🗑️ Excluir", type="secondary"): run_transaction("DELETE FROM agenda WHERE id=?",
+                                                                          (aid,)); st.success("Excluído!"); time.sleep(
+                0.5); st.rerun()
+            st.divider();
             st.dataframe(ag, use_container_width=True)
         else:
-            st.info("Nenhum agendamento encontrado no banco de dados.")
+            st.info("Nenhum agendamento encontrado.")
 
 elif menu == "Clientes":
     st.title("Clientes")
@@ -389,7 +419,7 @@ elif menu == "Clientes":
             try:
                 c1.download_button("📄 Baixar PDF", gerar_ficha_pdf(cd), f"ficha_{cd['nome']}.pdf", "application/pdf")
             except:
-                c1.warning("Instale 'fpdf' no requirements.txt")
+                pass
             if c2.button("Excluir Cliente", type="secondary"): run_transaction("DELETE FROM clientes WHERE id=?",
                                                                                (cid,)); st.rerun()
 
@@ -406,23 +436,81 @@ elif menu == "Procedimentos":
 
 elif menu == "Financeiro":
     st.title("Fluxo de Caixa")
-    t1, t2 = st.tabs(["Resumo", "Lançar Despesa"])
+    t1, t2, t3 = st.tabs(["Resumo", "Nova Despesa", "Histórico"])
+    q_rec = "SELECT a.data_agendamento as Data, 'Receita: '||p.nome||' ('||c.nome||')' as Descrição, p.valor as Valor, 'Receita' as Tipo FROM agenda a JOIN clientes c ON a.cliente_id=c.id JOIN procedimentos p ON a.procedimento_id=p.id WHERE a.status='Concluído'"
+    df_rec = get_data(q_rec)
+    df_desp = get_data(
+        "SELECT data_despesa as Data, descricao as Descrição, valor as Valor, 'Despesa' as Tipo FROM despesas")
+    df_fluxo = pd.concat([df_rec, df_desp], ignore_index=True)
+    if not df_fluxo.empty: df_fluxo['Data'] = pd.to_datetime(df_fluxo['Data']).dt.date; df_fluxo = df_fluxo.sort_values(
+        'Data', ascending=False)
+
+    tot_r = df_rec['Valor'].sum() if not df_rec.empty else 0
+    tot_d = df_desp['Valor'].sum() if not df_desp.empty else 0
+
     with t1:
-        rec = get_data(
-            "SELECT SUM(p.valor) FROM agenda a JOIN procedimentos p ON a.procedimento_id=p.id WHERE a.status='Concluído'").iloc[
-                  0, 0] or 0
-        desp = get_data("SELECT SUM(valor) FROM despesas").iloc[0, 0] or 0
-        st.metric("Saldo Líquido", f"R$ {rec - desp:,.2f}")
+        c1, c2, c3 = st.columns(3);
+        c1.metric("Entradas", f"R$ {tot_r:,.2f}");
+        c2.metric("Saídas", f"R$ {tot_d:,.2f}");
+        c3.metric("Saldo", f"R$ {tot_r - tot_d:,.2f}")
+        st.dataframe(df_fluxo.style.applymap(
+            lambda v: 'background-color:#d4edda' if v == 'Receita' else 'background-color:#f8d7da', subset=['Tipo']),
+                     use_container_width=True)
     with t2:
-        with st.form("nd"):
+        with st.form("fd"):
             d = st.text_input("Descrição");
             v = st.number_input("Valor");
             dt = st.date_input("Data")
             if st.form_submit_button("Lançar"): run_transaction(
                 "INSERT INTO despesas (descricao, valor, data_despesa, categoria) VALUES (?,?,?,?)",
                 (d, v, dt, "Geral")); st.rerun()
+    with t3:
+        dl = get_data("SELECT id, data_despesa, descricao, valor FROM despesas ORDER BY data_despesa DESC")
+        if not dl.empty:
+            did = st.selectbox("Excluir Despesa", dl['id'].tolist(),
+                               format_func=lambda x: f"{x} - {dl[dl['id'] == x].iloc[0]['descricao']}")
+            if st.button("Apagar", type="secondary"): run_transaction("DELETE FROM despesas WHERE id=?",
+                                                                      (did,)); st.rerun()
 
 elif menu == "Relatórios":
-    st.title("Relatórios")
-    df = get_data("SELECT * FROM agenda")
-    st.dataframe(df)
+    st.title("📊 Relatórios")
+    c1, c2 = st.columns(2);
+    d1 = c1.date_input("Início", date.today().replace(day=1));
+    d2 = c2.date_input("Fim", date.today())
+    q = f"""SELECT a.data_agendamento as Data, 'Receita: '||p.nome||' ('||c.nome||')' as Descrição, 'Receita' as Tipo, p.valor as Valor FROM agenda a JOIN procedimentos p ON a.procedimento_id=p.id JOIN clientes c ON a.cliente_id=c.id WHERE a.status='Concluído' AND a.data_agendamento BETWEEN '{d1}' AND '{d2}' UNION ALL SELECT data_despesa as Data, descricao as Descrição, 'Despesa' as Tipo, valor as Valor FROM despesas WHERE data_despesa BETWEEN '{d1}' AND '{d2}' ORDER BY Data"""
+    df_rel = get_data(q)
+    if not df_rel.empty:
+        rec_p = df_rel[df_rel['Tipo'] == 'Receita']['Valor'].sum();
+        desp_p = df_rel[df_rel['Tipo'] == 'Despesa']['Valor'].sum();
+        saldo_p = rec_p - desp_p
+        st.markdown("---");
+        m1, m2, m3 = st.columns(3);
+        m1.metric("Receitas", f"R$ {rec_p:,.2f}");
+        m2.metric("Despesas", f"R$ {desp_p:,.2f}");
+        m3.metric("Saldo", f"R$ {saldo_p:,.2f}")
+        st.dataframe(df_rel.style.applymap(lambda v: 'color:green' if v == 'Receita' else 'color:red', subset=['Tipo']),
+                     use_container_width=True)
+        ce1, ce2 = st.columns(2);
+        b = io.BytesIO()
+        with pd.ExcelWriter(b, engine='openpyxl') as w:
+            df_rel.to_excel(w, index=False)
+        ce1.download_button("📊 Excel", b.getvalue(), "relatorio.xlsx", "application/vnd.ms-excel")
+        try:
+            pdf = gerar_pdf_fluxo(df_rel, f"{d1} a {d2}", rec_p, desp_p, saldo_p)
+            ce2.download_button("📑 PDF", pdf, "relatorio.pdf", "application/pdf")
+        except:
+            ce2.warning("Instale 'fpdf'")
+    else:
+        st.info("Sem dados neste período.")
+
+elif menu == "AI Insights":
+    st.title("CRM Inteligente")
+    mes = datetime.now().month
+    niv = get_data(
+        f"SELECT nome, data_nascimento FROM clientes WHERE cast(strftime('%m', data_nascimento) as int) = {mes}")
+    if not niv.empty:
+        st.success(f"{len(niv)} Aniversariantes este mês!");
+        for i, r in niv.iterrows(): st.write(
+            f"🎂 {r['nome']} ({datetime.strptime(str(r['data_nascimento']), '%Y-%m-%d').strftime('%d/%m')})")
+    else:
+        st.info("Sem aniversariantes este mês.")
