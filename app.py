@@ -15,10 +15,10 @@ try:
 except:
     pass
 
-# --- CONFIGURAÇÃO DE E-MAIL (PREENCHA AQUI) ---
-EMAIL_REMETENTE = 'luizmarcelomanacas@gmail.com'
-EMAIL_SENHA = 'vugc rskj wzpl jplg'  # Senha de App de 16 dígitos
-EMAIL_DESTINATARIO = 'luizmarcelomanacas@gmail.com'
+# --- CONFIGURAÇÃO DE E-MAIL (PREENCHA AQUI SEUS DADOS REAIS) ---
+EMAIL_REMETENTE = 'seu.email@gmail.com'
+EMAIL_SENHA = 'abcd efgh ijkl mnop'  # Senha de App de 16 dígitos
+EMAIL_DESTINATARIO = 'seu.email@gmail.com'
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Estética Avançada Bárbara Castro", layout="wide", page_icon="✨")
@@ -332,7 +332,7 @@ def gerar_historico_pdf(cliente_nome, df_hist, total):
     return pdf.output(dest='S').encode('latin-1')
 
 
-# --- GATILHO EXTERNO (CRON-JOB) ---
+# --- GATILHO EXTERNO (CRON-JOB/GITHUB ACTIONS) ---
 if "rotina" in st.query_params and st.query_params["rotina"] == "disparar_email":
     res = enviar_agenda_email()
     st.write(res);
@@ -347,10 +347,7 @@ with st.sidebar:
     menu = st.radio("NAVEGAÇÃO",
                     ["Dashboard", "Agenda", "Clientes", "Procedimentos", "Financeiro", "Relatórios", "AI Insights"])
     st.markdown("---")
-    if st.button("📧 Testar Envio E-mail"):
-        res = enviar_agenda_email()
-        st.success(res) if "Sucesso" in res else st.error(res)
-    st.markdown("---")
+    # Botão de teste removido pois a automação já funciona
     with open(DB_FILE, "rb") as fp:
         st.download_button("💾 Backup Completo", fp, f"backup_{date.today()}.db")
 
