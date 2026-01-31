@@ -16,10 +16,9 @@ except:
     pass
 
 # --- CONFIGURAÇÃO DE E-MAIL (PREENCHA AQUI) ---
-# Use sua senha de App do Google (não a senha de login)
 EMAIL_REMETENTE = 'seu.email@gmail.com'
-EMAIL_SENHA = 'abcd efgh ijkl mnop'  # Coloque a senha de 16 letras aqui
-EMAIL_DESTINATARIO = 'seu.email@gmail.com'  # Para onde vai a agenda
+EMAIL_SENHA = 'abcd efgh ijkl mnop'  # Senha de App de 16 dígitos
+EMAIL_DESTINATARIO = 'seu.email@gmail.com'
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Estética Avançada Bárbara Castro", layout="wide", page_icon="✨")
@@ -298,6 +297,41 @@ def gerar_ficha_pdf(dados):
     return pdf.output(dest='S').encode('latin-1')
 
 
+def gerar_historico_pdf(cliente_nome, df_hist, total):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", 'B', 16);
+    pdf.cell(0, 10, f"Historico Financeiro - {cliente_nome}", ln=1, align='C')
+    pdf.set_font("Arial", 'I', 10);
+    pdf.cell(0, 10, "Estetica Avancada Barbara Castro", ln=1, align='C')
+    pdf.line(10, 30, 200, 30);
+    pdf.ln(10)
+
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(0, 10, f"Total Investido: R$ {total:,.2f}", ln=1, align='R')
+    pdf.ln(5)
+
+    pdf.set_fill_color(212, 175, 55);
+    pdf.set_text_color(255, 255, 255);
+    pdf.set_font("Arial", 'B', 10)
+    pdf.cell(30, 8, "Data", 1, 0, 'C', True)
+    pdf.cell(100, 8, "Procedimento", 1, 0, 'C', True)
+    pdf.cell(40, 8, "Valor", 1, 1, 'C', True)
+
+    pdf.set_text_color(0, 0, 0);
+    pdf.set_font("Arial", '', 10)
+    for i, row in df_hist.iterrows():
+        try:
+            d_fmt = datetime.strptime(str(row['Data']), '%Y-%m-%d').strftime('%d/%m/%Y')
+        except:
+            d_fmt = str(row['Data'])
+        pdf.cell(30, 8, d_fmt, 1)
+        pdf.cell(100, 8, row['Procedimento'].encode('latin-1', 'replace').decode('latin-1'), 1)
+        pdf.cell(40, 8, f"R$ {row['Valor']:,.2f}", 1, 1, 'R')
+
+    return pdf.output(dest='S').encode('latin-1')
+
+
 # --- GATILHO EXTERNO (CRON-JOB) ---
 if "rotina" in st.query_params and st.query_params["rotina"] == "disparar_email":
     res = enviar_agenda_email()
@@ -474,34 +508,73 @@ elif menu == "Financeiro":
 
 elif menu == "Relatórios":
     st.title("📊 Relatórios")
-    c1, c2 = st.columns(2);
-    d1 = c1.date_input("Início", date.today().replace(day=1));
-    d2 = c2.date_input("Fim", date.today())
-    q = f"""SELECT a.data_agendamento as Data, 'Receita: '||p.nome||' ('||c.nome||')' as Descrição, 'Receita' as Tipo, p.valor as Valor FROM agenda a JOIN procedimentos p ON a.procedimento_id=p.id JOIN clientes c ON a.cliente_id=c.id WHERE a.status='Concluído' AND a.data_agendamento BETWEEN '{d1}' AND '{d2}' UNION ALL SELECT data_despesa as Data, descricao as Descrição, 'Despesa' as Tipo, valor as Valor FROM despesas WHERE data_despesa BETWEEN '{d1}' AND '{d2}' ORDER BY Data"""
-    df_rel = get_data(q)
-    if not df_rel.empty:
-        rec_p = df_rel[df_rel['Tipo'] == 'Receita']['Valor'].sum();
-        desp_p = df_rel[df_rel['Tipo'] == 'Despesa']['Valor'].sum();
-        saldo_p = rec_p - desp_p
-        st.markdown("---");
-        m1, m2, m3 = st.columns(3);
-        m1.metric("Receitas", f"R$ {rec_p:,.2f}");
-        m2.metric("Despesas", f"R$ {desp_p:,.2f}");
-        m3.metric("Saldo", f"R$ {saldo_p:,.2f}")
-        st.dataframe(df_rel.style.applymap(lambda v: 'color:green' if v == 'Receita' else 'color:red', subset=['Tipo']),
-                     use_container_width=True)
-        ce1, ce2 = st.columns(2);
-        b = io.BytesIO()
-        with pd.ExcelWriter(b, engine='openpyxl') as w:
-            df_rel.to_excel(w, index=False)
-        ce1.download_button("📊 Excel", b.getvalue(), "relatorio.xlsx", "application/vnd.ms-excel")
-        try:
-            pdf = gerar_pdf_fluxo(df_rel, f"{d1} a {d2}", rec_p, desp_p, saldo_p)
-            ce2.download_button("📑 PDF", pdf, "relatorio.pdf", "application/pdf")
-        except:
-            ce2.warning("Instale 'fpdf'")
-    else:
-        st.info("Sem dados neste período.")
+    t1, t2 = st.tabs(["Fluxo de Caixa", "Histórico do Cliente"])
+
+    with t1:
+        c1, c2 = st.columns(2);
+        d1 = c1.date_input("Início", date.today().replace(day=1));
+        d2 = c2.date_input("Fim", date.today())
+        q = f"""SELECT a.data_agendamento as Data, 'Receita: '||p.nome||' ('||c.nome||')' as Descrição, 'Receita' as Tipo, p.valor as Valor FROM agenda a JOIN procedimentos p ON a.procedimento_id=p.id JOIN clientes c ON a.cliente_id=c.id WHERE a.status='Concluído' AND a.data_agendamento BETWEEN '{d1}' AND '{d2}' UNION ALL SELECT data_despesa as Data, descricao as Descrição, 'Despesa' as Tipo, valor as Valor FROM despesas WHERE data_despesa BETWEEN '{d1}' AND '{d2}' ORDER BY Data"""
+        df_rel = get_data(q)
+        if not df_rel.empty:
+            rec_p = df_rel[df_rel['Tipo'] == 'Receita']['Valor'].sum();
+            desp_p = df_rel[df_rel['Tipo'] == 'Despesa']['Valor'].sum();
+            saldo_p = rec_p - desp_p
+            st.markdown("---");
+            m1, m2, m3 = st.columns(3);
+            m1.metric("Receitas", f"R$ {rec_p:,.2f}");
+            m2.metric("Despesas", f"R$ {desp_p:,.2f}");
+            m3.metric("Saldo", f"R$ {saldo_p:,.2f}")
+            st.dataframe(
+                df_rel.style.applymap(lambda v: 'color:green' if v == 'Receita' else 'color:red', subset=['Tipo']),
+                use_container_width=True)
+            ce1, ce2 = st.columns(2);
+            b = io.BytesIO()
+            with pd.ExcelWriter(b, engine='openpyxl') as w:
+                df_rel.to_excel(w, index=False)
+            ce1.download_button("📊 Excel", b.getvalue(), "relatorio.xlsx", "application/vnd.ms-excel")
+            try:
+                pdf = gerar_pdf_fluxo(df_rel, f"{d1} a {d2}", rec_p, desp_p, saldo_p)
+                ce2.download_button("📑 PDF", pdf, "relatorio.pdf", "application/pdf")
+            except:
+                ce2.warning("Instale 'fpdf'")
+        else:
+            st.info("Sem dados neste período.")
+
+    with t2:
+        st.subheader("Histórico por Cliente")
+        cli_list = get_data("SELECT id, nome FROM clientes ORDER BY nome")
+        if not cli_list.empty:
+            c_id = st.selectbox("Selecione o Cliente:", cli_list['id'].tolist(),
+                                format_func=lambda x: f"{cli_list[cli_list['id'] == x].iloc[0]['nome']}")
+            c_nome = cli_list[cli_list['id'] == c_id].iloc[0]['nome']
+
+            # Query do histórico
+            q_hist = f"""
+                SELECT a.data_agendamento as Data, p.nome as Procedimento, p.valor as Valor, a.status
+                FROM agenda a
+                JOIN procedimentos p ON a.procedimento_id = p.id
+                WHERE a.cliente_id = {c_id} AND a.status = 'Concluído'
+                ORDER BY a.data_agendamento DESC
+            """
+            df_hist = get_data(q_hist)
+
+            if not df_hist.empty:
+                total_investido = df_hist['Valor'].sum()
+                st.metric(f"Total Investido por {c_nome}", f"R$ {total_investido:,.2f}")
+                st.dataframe(df_hist, use_container_width=True)
+
+                # PDF do Histórico
+                try:
+                    pdf_h = gerar_historico_pdf(c_nome, df_hist, total_investido)
+                    st.download_button(f"📑 Baixar Extrato de {c_nome}", pdf_h, f"extrato_{c_nome}.pdf",
+                                       "application/pdf")
+                except:
+                    pass
+            else:
+                st.info(f"O cliente {c_nome} ainda não concluiu nenhum procedimento.")
+        else:
+            st.warning("Cadastre clientes primeiro.")
 
 elif menu == "AI Insights":
     st.title("CRM Inteligente")
