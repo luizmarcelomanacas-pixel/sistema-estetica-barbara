@@ -16,7 +16,7 @@ except:
     pass
 
 # --- CONFIGURAÇÃO DE E-MAIL (PREENCHA AQUI) ---
-EMAIL_REMETENTE = 'luizmarcelomanacas@gmail'
+EMAIL_REMETENTE = 'luizmarcelomanacas@gmail.com'
 EMAIL_SENHA = 'vugc rskj wzpl jplg'  # Senha de App de 16 dígitos
 EMAIL_DESTINATARIO = 'luizmarcelomanacas@gmail.com'
 
