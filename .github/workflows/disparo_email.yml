@@ -1,0 +1,36 @@
+name: Disparo Automático Agenda
+on:
+  schedule:
+    # Roda todo dia às 10:00 UTC (07:00 Brasil)
+    - cron: '0 10 * * *'
+  workflow_dispatch: # Permite testar clicando num botão
+
+jobs:
+  acessar_agenda:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Instalar Navegador
+        run: |
+          pip install playwright
+          playwright install chromium
+
+      - name: Abrir Site e Disparar E-mail
+        run: |
+          python -c "
+          from playwright.sync_api import sync_playwright
+          import time
+          
+          with sync_playwright() as p:
+              browser = p.chromium.launch()
+              page = browser.new_page()
+              # SUBSTITUA O LINK ABAIXO PELO SEU LINK DO STREAMLIT
+              print('Acessando o site...')
+              page.goto('https://sistema-estetica-barbara.streamlit.app/?rotina=disparar_email')
+              
+              # Espera 15 segundos para o site carregar e o e-mail sair
+              print('Aguardando envio...')
+              time.sleep(15)
+              
+              browser.close()
+              print('Feito!')
+          "
