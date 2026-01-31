@@ -4,20 +4,21 @@ import pandas as pd
 from datetime import datetime, date
 import time
 import os
-import requests  # Necessário para a Z-API
-from urllib.parse import quote
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
-# Tenta importar FPDF, se der erro ignora para não quebrar o app
+# Tenta importar FPDF
 try:
     from fpdf import FPDF
 except:
     pass
 
-# --- CONFIGURAÇÃO DA Z-API (OPÇÃO PAGA/PROFISSIONAL) ---
-# Substitua pelos dados do seu painel Z-API
-ZAPI_INSTANCE_ID = '3EE0C802EF9F42C7CA3512E352C1CFB5'  # Ex: 3A2F3D...
-ZAPI_TOKEN = 'E22495F303A338BA9B19D1D3'  # Ex: 4b8c9d...
-SEU_CELULAR = '5521985554643'  # Seu número (55 + DDD + Numero)
+# --- CONFIGURAÇÃO DE E-MAIL (PREENCHA AQUI) ---
+# Use sua senha de App do Google (não a senha de login)
+EMAIL_REMETENTE = 'seu.email@gmail.com'
+EMAIL_SENHA = 'abcd efgh ijkl mnop'  # Coloque a senha de 16 letras aqui
+EMAIL_DESTINATARIO = 'seu.email@gmail.com'  # Para onde vai a agenda
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Estética Avançada Bárbara Castro", layout="wide", page_icon="✨")
@@ -33,17 +34,14 @@ st.markdown("""
     .stButton>button:hover { transform: translateY(-2px); box-shadow: 0 4px 10px rgba(212, 175, 55, 0.3); }
     [data-testid="stMetric"] { background-color: rgba(255,255,255,0.8); border-radius: 12px; border: 1px solid #f5efe6; padding: 10px; }
     [data-testid="stDataFrame"] { background-color: rgba(255,255,255,0.9); border-radius: 15px; padding: 10px; }
-    .zap-btn { display: inline-block; text-decoration: none; background-color: #25D366; color: white !important; padding: 10px 20px; border-radius: 8px; font-weight: bold; text-align: center; width: 100%; margin-top: 10px; }
-    .zap-btn:hover { background-color: #128C7E; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- BANCO DE DADOS (ANTI-TRAVAMENTO) ---
+# --- BANCO DE DADOS ---
 DB_FILE = 'clinica_gold.db'
 
 
 def run_transaction(query, params=()):
-    """Executa escrita no banco de forma rápida e segura"""
     try:
         with sqlite3.connect(DB_FILE, timeout=30) as conn:
             conn.execute("PRAGMA journal_mode=WAL")
@@ -57,7 +55,6 @@ def run_transaction(query, params=()):
 
 
 def get_data(query):
-    """Lê dados do banco"""
     try:
         with sqlite3.connect(DB_FILE, timeout=30) as conn:
             return pd.read_sql(query, conn)
@@ -66,7 +63,6 @@ def get_data(query):
 
 
 def init_db():
-    """Cria tabelas e colunas se não existirem"""
     queries = [
         '''CREATE TABLE IF NOT EXISTS clientes
            (
@@ -168,7 +164,7 @@ def init_db():
             conn.execute("ALTER TABLE clientes ADD COLUMN anamnese TEXT")
         except:
             pass
-        # Dados iniciais
+        # Dados Iniciais
         cur = conn.cursor()
         if cur.execute("SELECT count(*) FROM procedimentos").fetchone()[0] == 0:
             cur.executemany("INSERT INTO procedimentos (nome, valor, duracao_min, categoria) VALUES (?,?,?,?)",
@@ -180,11 +176,12 @@ def init_db():
 init_db()
 
 
-# --- FUNÇÃO Z-API (AUTOMÁTICA) ---
-def enviar_agenda_zapi():
+# --- FUNÇÃO DE E-MAIL (AUTOMÁTICA) ---
+def enviar_agenda_email():
     try:
         conn = sqlite3.connect(DB_FILE, check_same_thread=False)
         hoje = date.today()
+        # Pega a agenda de HOJE
         query = f"""
             SELECT a.hora_agendamento, c.nome, p.nome as proc 
             FROM agenda a 
@@ -195,28 +192,38 @@ def enviar_agenda_zapi():
         """
         df = pd.read_sql(query, conn)
         conn.close()
-    except Exception as e:
-        return f"Erro ao ler banco: {e}"
 
-    if df.empty:
-        mensagem = f"Bom dia, Bárbara! ☀️\n\n📅 *Agenda ({hoje.strftime('%d/%m')}):*\nNenhum cliente agendado."
-    else:
-        mensagem = f"Bom dia, Bárbara! ☀️\n\n📅 *Agenda ({hoje.strftime('%d/%m')}):*\n-------------------\n"
-        for i, row in df.iterrows():
-            hora = str(row['hora_agendamento'])[:5]
-            mensagem += f"⏰ *{hora}* - {row['nome']}\n   └ _{row['proc']}_\n\n"
-        mensagem += "-------------------\nBom trabalho! 🚀"
+        # Monta o E-mail
+        msg = MIMEMultipart()
+        msg['From'] = EMAIL_REMETENTE
+        msg['To'] = EMAIL_DESTINATARIO
+        msg['Subject'] = f"📅 Agenda Bárbara Castro - {hoje.strftime('%d/%m/%Y')}"
 
-    url = f"https://api.z-api.io/instances/{ZAPI_INSTANCE_ID}/token/{ZAPI_TOKEN}/send-text"
-    try:
-        response = requests.post(url, json={"phone": SEU_CELULAR, "message": mensagem},
-                                 headers={"Content-Type": "application/json"})
-        if response.status_code == 200:
-            return "✅ Enviado via Z-API!"
+        if df.empty:
+            corpo_html = f"<h3>Bom dia! ☀️</h3><p>Não há clientes agendados para hoje ({hoje.strftime('%d/%m')}). Aproveite o dia!</p>"
         else:
-            return f"❌ Erro Z-API: {response.text}"
+            tabela_html = """<table style='width:100%; border-collapse: collapse; font-family: Arial;'>
+            <tr style='background-color: #d4af37; color: white;'><th style='padding:10px;'>Hora</th><th style='padding:10px;'>Cliente</th><th style='padding:10px;'>Procedimento</th></tr>"""
+
+            for i, row in df.iterrows():
+                hora = str(row['hora_agendamento'])[:5]
+                tabela_html += f"<tr style='border-bottom: 1px solid #ddd;'><td style='padding:10px; text-align:center'><b>{hora}</b></td><td style='padding:10px;'>{row['nome']}</td><td style='padding:10px;'>{row['proc']}</td></tr>"
+            tabela_html += "</table>"
+
+            corpo_html = f"<h3>Bom dia! Aqui está sua agenda de hoje:</h3>{tabela_html}<br><p>Sistema de Gestão Bárbara Castro ✨</p>"
+
+        msg.attach(MIMEText(corpo_html, 'html'))
+
+        # Envia via Gmail
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(EMAIL_REMETENTE, EMAIL_SENHA)
+        server.send_message(msg)
+        server.quit()
+        return "✅ E-mail enviado com sucesso!"
+
     except Exception as e:
-        return f"❌ Erro Conexão: {e}"
+        return f"❌ Erro ao enviar e-mail: {e}"
 
 
 # --- FUNÇÕES PDF ---
@@ -236,8 +243,8 @@ def gerar_ficha_pdf(dados):
 
 
 # --- GATILHO EXTERNO (CRON-JOB) ---
-if "rotina" in st.query_params and st.query_params["rotina"] == "disparar_zapi":
-    res = enviar_agenda_zapi()
+if "rotina" in st.query_params and st.query_params["rotina"] == "disparar_email":
+    res = enviar_agenda_email()
     st.write(res);
     st.stop()
 
@@ -247,23 +254,16 @@ with st.sidebar:
         st.image("Barbara.jpeg", width=130)
     else:
         st.markdown("### 👑 Bárbara Castro")
-    st.markdown("<p style='color:#d4af37;font-size:12px;font-weight:700;text-align:center'>ADMIN ESPECIALISTA</p>",
-                unsafe_allow_html=True)
     menu = st.radio("NAVEGAÇÃO", ["Dashboard", "Agenda", "Clientes", "Procedimentos", "Financeiro", "Relatórios"])
     st.markdown("---")
 
-    # Botão Manual (Caso a Z-API não esteja paga ainda)
-    if st.button("📲 Gerar Zap Manual"):
-        hoje = date.today()
-        df_zap = get_data(
-            f"SELECT a.hora_agendamento, c.nome, p.nome as proc FROM agenda a JOIN clientes c ON a.cliente_id=c.id JOIN procedimentos p ON a.procedimento_id=p.id WHERE a.data_agendamento='{hoje}' AND a.status='Agendado' ORDER BY a.hora_agendamento")
-        txt = f"📅 *Agenda ({hoje.strftime('%d/%m')}):*\n\n"
-        if df_zap.empty:
-            txt += "Livre!"
+    # Botão de Teste Manual do Email
+    if st.button("📧 Testar Envio de E-mail"):
+        res = enviar_agenda_email()
+        if "Sucesso" in res:
+            st.success(res)
         else:
-            for i, r in df_zap.iterrows(): txt += f"⏰ {str(r['hora_agendamento'])[:5]} - {r['nome']}\n"
-        lnk = f"https://wa.me//?text={quote(txt)}"
-        st.markdown(f'<a href="{lnk}" target="_blank" class="zap-btn">Abrir WhatsApp</a>', unsafe_allow_html=True)
+            st.error(res)
 
     st.markdown("---")
     with open(DB_FILE, "rb") as fp:
@@ -280,6 +280,7 @@ if menu == "Dashboard":
     c1.metric("Faturamento", f"R$ {total:,.2f}");
     c2.metric("Agendados Hoje", len(df_hj));
     c3.metric("Dia", date.today().strftime('%d/%m'))
+
     st.markdown(f"### 📅 Clientes de Hoje")
     q_dia = f"SELECT a.hora_agendamento as Hora, c.nome as Cliente, p.nome as Procedimento, a.status FROM agenda a JOIN clientes c ON a.cliente_id=c.id JOIN procedimentos p ON a.procedimento_id=p.id WHERE a.data_agendamento='{date.today()}' ORDER BY Hora"
     df_dia = get_data(q_dia)
@@ -315,17 +316,49 @@ elif menu == "Agenda":
             st.dataframe(get_data(
                 "SELECT a.data_agendamento as Data, a.hora_agendamento as Hora, c.nome, p.nome as Servico, a.status FROM agenda a JOIN clientes c ON a.cliente_id=c.id JOIN procedimentos p ON a.procedimento_id=p.id ORDER BY Data DESC"),
                          use_container_width=True)
+
     with t2:
-        ag = get_data(
-            "SELECT a.id, c.nome, a.data_agendamento FROM agenda a JOIN clientes c ON a.cliente_id=c.id ORDER BY Data DESC")
+        # CORREÇÃO DO GERENCIAR: Mostra os próximos agendamentos ou lista vazia se não houver
+        st.markdown("### Agendamentos Futuros e Recentes")
+
+        # Filtra para mostrar agendamentos de hoje em diante ou todos ordenados
+        q_gerenciar = """
+                      SELECT a.id, c.nome, a.data_agendamento, a.hora_agendamento, p.nome as proc, a.status
+                      FROM agenda a
+                               JOIN clientes c ON a.cliente_id = c.id
+                               JOIN procedimentos p ON a.procedimento_id = p.id
+                      ORDER BY a.data_agendamento DESC, a.hora_agendamento DESC \
+                      """
+        ag = get_data(q_gerenciar)
+
         if not ag.empty:
-            op = {f"{r['id']} - {r['nome']} ({r['data_agendamento']})": r['id'] for i, r in ag.iterrows()}
-            aid = op[st.selectbox("Selecione para Editar", list(op.keys()))]
-            col1, col2 = st.columns(2)
-            if col1.button("✅ Concluir Atendimento"): run_transaction("UPDATE agenda SET status='Concluído' WHERE id=?",
-                                                                      (aid,)); st.rerun()
-            if col2.button("🗑️ Excluir Agendamento", type="secondary"): run_transaction("DELETE FROM agenda WHERE id=?",
-                                                                                        (aid,)); st.rerun()
+            # Cria lista para seleção
+            op = {f"{r['data_agendamento']} - {r['hora_agendamento'][:5]} - {r['nome']} ({r['status']})": r['id'] for
+                  i, r in ag.iterrows()}
+            aid_key = st.selectbox("Selecione um Agendamento para editar:", list(op.keys()))
+            aid = op[aid_key]
+
+            # Mostra detalhes
+            detalhe = ag[ag['id'] == aid].iloc[0]
+            st.info(f"Cliente: **{detalhe['nome']}** | Serviço: **{detalhe['proc']}**")
+
+            c_edit1, c_edit2 = st.columns(2)
+            if c_edit1.button("✅ Marcar como Concluído"):
+                run_transaction("UPDATE agenda SET status='Concluído' WHERE id=?", (aid,))
+                st.success("Atualizado!");
+                time.sleep(0.5);
+                st.rerun()
+
+            if c_edit2.button("🗑️ Excluir Agendamento", type="secondary"):
+                run_transaction("DELETE FROM agenda WHERE id=?", (aid,))
+                st.success("Excluído!");
+                time.sleep(0.5);
+                st.rerun()
+
+            st.divider()
+            st.dataframe(ag, use_container_width=True)
+        else:
+            st.info("Nenhum agendamento encontrado no banco de dados.")
 
 elif menu == "Clientes":
     st.title("Clientes")
