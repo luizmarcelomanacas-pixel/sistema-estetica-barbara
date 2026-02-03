@@ -16,9 +16,9 @@ except:
     pass
 
 # --- CONFIGURAÇÃO DE E-MAIL (PREENCHA AQUI SEUS DADOS REAIS) ---
-EMAIL_REMETENTE = 'seu.email@gmail.com'
-EMAIL_SENHA = 'abcd efgh ijkl mnop'  # Senha de App de 16 dígitos
-EMAIL_DESTINATARIO = 'seu.email@gmail.com'
+EMAIL_REMETENTE = 'luizmarcelomanacas@gmail.com'
+EMAIL_SENHA = 'njyt nrvd vtro jgwi'  # Senha de App de 16 dígitos
+EMAIL_DESTINATARIO = 'luizmarcelomanacas@gmail.com'
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Estética Avançada Bárbara Castro", layout="wide", page_icon="✨")
