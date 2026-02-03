@@ -3,7 +3,7 @@ on:
   schedule:
     # Roda todo dia às 10:00 UTC (07:00 Brasil)
     - cron: '0 10 * * *'
-  workflow_dispatch: # Permite testar clicando num botão
+  workflow_dispatch:
 
 jobs:
   acessar_agenda:
@@ -14,23 +14,51 @@ jobs:
           pip install playwright
           playwright install chromium
 
-      - name: Abrir Site e Disparar E-mail
+      - name: Abrir Site, Acordar e Disparar
         run: |
           python -c "
           from playwright.sync_api import sync_playwright
           import time
-          
+
+          # SEU LINK AQUI (Confira se está certo)
+          LINK_DO_APP = 'https://sistema-estetica-barbara.streamlit.app/?rotina=disparar_email'
+
           with sync_playwright() as p:
+              print('🚀 Iniciando robô...')
               browser = p.chromium.launch()
               page = browser.new_page()
-              # SUBSTITUA O LINK ABAIXO PELO SEU LINK DO STREAMLIT
-              print('Acessando o site...')
-              page.goto('https://sistema-estetica-barbara.streamlit.app/?rotina=disparar_email')
               
-              # Espera 15 segundos para o site carregar e o e-mail sair
-              print('Aguardando envio...')
-              time.sleep(15)
+              # TENTATIVA 1: Acordar o sistema
+              print('Acessando o site (Tentativa 1)...')
+              try:
+                  page.goto(LINK_DO_APP, timeout=60000) # Espera até 60s carregar
+                  time.sleep(15) 
+              except:
+                  print('Site demorou para responder (normal na hibernação).')
+
+              # TENTATIVA 2: O Pulo do Gato (Refresh para forçar execução)
+              print('🔄 Recarregando para garantir o envio...')
+              page.reload()
               
+              # Espera o processamento final
+              print('⏳ Aguardando envio do e-mail...')
+              time.sleep(60) 
+              
+              # Tira um print para sabermos o que houve (se der erro de novo)
+              page.screenshot(path='print_tela.png')
+              
+              content = page.content()
+              if 'E-mail enviado' in content or 'Sucesso' in content:
+                  print('✅ SUCESSO: Mensagem de confirmação encontrada na tela!')
+              else:
+                  print('⚠️ ALERTA: Não achei a mensagem de confirmação. Verifique o print.')
+                  
               browser.close()
-              print('Feito!')
           "
+          
+      - name: Salvar Print de Erro (Opcional)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: print-da-tela
+          path: print_tela.png
