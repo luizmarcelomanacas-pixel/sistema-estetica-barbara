@@ -31,7 +31,7 @@ jobs:
               # TENTATIVA 1: Acordar o sistema
               print('Acessando o site (Tentativa 1)...')
               try:
-                  page.goto(LINK_DO_APP, timeout=60000) # Espera até 60s carregar
+                  page.goto(LINK_DO_APP, timeout=60000) # Espera até 90s carregar
                   time.sleep(15) 
               except:
                   print('Site demorou para responder (normal na hibernação).')
@@ -42,7 +42,7 @@ jobs:
               
               # Espera o processamento final
               print('⏳ Aguardando envio do e-mail...')
-              time.sleep(60) 
+              time.sleep(90) 
               
               # Tira um print para sabermos o que houve (se der erro de novo)
               page.screenshot(path='print_tela.png')
