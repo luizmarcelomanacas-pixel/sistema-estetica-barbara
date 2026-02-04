@@ -14,6 +14,48 @@ from supabase import create_client, Client
 # --- CONFIGURAÇÃO VISUAL ---
 st.set_page_config(page_title="Bárbara Castro Estética", layout="wide", page_icon="✨")
 
+# --- SISTEMA DE LOGIN (O PORTEIRO) ---
+if "logado" not in st.session_state:
+    st.session_state["logado"] = False
+
+
+def check_login():
+    st.markdown("<h1 style='text-align: center; color: #D4AF37;'>🔐 Acesso Restrito</h1>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center;'>Sistema de Gestão - Bárbara Castro</p>", unsafe_allow_html=True)
+
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        with st.form("login_form"):
+            user = st.text_input("Usuário")
+            password = st.text_input("Senha", type="password")
+            submit = st.form_submit_button("Entrar no Sistema", type="primary")
+
+            if submit:
+                # Verifica se as credenciais batem com o secrets.toml
+                try:
+                    segredo_user = st.secrets["admin"]["usuario"]
+                    segredo_pass = st.secrets["admin"]["senha"]
+
+                    if user == segredo_user and password == segredo_pass:
+                        st.session_state["logado"] = True
+                        st.success("Login realizado com sucesso!")
+                        time.sleep(1)
+                        st.rerun()
+                    else:
+                        st.error("Usuário ou senha incorretos.")
+                except Exception:
+                    st.error("Erro: Configure [admin] no secrets.toml")
+
+
+# Se não estiver logado, mostra o login e PARA O CÓDIGO AQUI
+if not st.session_state["logado"]:
+    check_login()
+    st.stop()  # 🛑 NADA ABAIXO DAQUI RODA SE NÃO TIVER LOGADO
+
+# ==============================================================================
+# DAQUI PARA BAIXO É O SISTEMA COMPLETO (SÓ CARREGA SE LOGADO)
+# ==============================================================================
+
 # --- CSS PERSONALIZADO ---
 st.markdown("""
     <style>
@@ -85,12 +127,10 @@ def delete_data(table, id_):
         return False
 
 
-# --- GERADOR DE PDF INDIVIDUAL (SEM FOTO) ---
+# --- GERADOR DE PDF ---
 def gerar_ficha_individual(dados_cliente):
     pdf = FPDF()
     pdf.add_page()
-
-    # Cabeçalho
     pdf.set_y(15)
     pdf.set_font("Arial", 'B', 18)
     pdf.cell(0, 10, "Bárbara Castro Estética Avançada", ln=True, align='C')
@@ -98,7 +138,6 @@ def gerar_ficha_individual(dados_cliente):
     pdf.cell(0, 10, "Ficha de Anamnese e Histórico", ln=True, align='C')
     pdf.ln(15)
 
-    # Dados
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 10, "DADOS DO CLIENTE:", ln=True)
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
@@ -118,7 +157,6 @@ def gerar_ficha_individual(dados_cliente):
             pass
     pdf.ln(10)
 
-    # Anamnese
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 10, "HISTÓRICO / ANAMNESE:", ln=True)
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
@@ -126,17 +164,14 @@ def gerar_ficha_individual(dados_cliente):
     pdf.set_font("Arial", size=11)
     pdf.multi_cell(0, 8, txt=str(dados_cliente.get('anamnese', 'Nenhuma observação.')))
 
-    # Rodapé
     pdf.ln(40)
     pdf.set_font("Arial", size=10)
     pdf.cell(0, 5, "________________________________________________________", ln=True, align='C')
     pdf.cell(0, 5, "Bárbara Castro - Estética Avançada", ln=True, align='C')
     pdf.cell(0, 5, f"Gerado em: {date.today().strftime('%d/%m/%Y')}", ln=True, align='C')
-
     return pdf.output(dest='S').encode('latin-1')
 
 
-# --- EXCEL ---
 def to_excel(df):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
@@ -144,7 +179,6 @@ def to_excel(df):
     return output.getvalue()
 
 
-# --- E-MAIL ---
 def enviar_agenda_email():
     try:
         df_ag = get_data("agenda")
@@ -185,12 +219,11 @@ def enviar_agenda_email():
         return f"❌ Erro: {e}"
 
 
-# --- GATILHO ROBÔ ---
 if "rotina" in st.query_params and st.query_params["rotina"] == "disparar_email":
     st.write(enviar_agenda_email())
     st.stop()
 
-# --- SIDEBAR ---
+# --- MENU LATERAL (SÓ APARECE SE LOGADO) ---
 with st.sidebar:
     if os.path.exists("Barbara.jpeg"):
         st.image("Barbara.jpeg", width=150)
@@ -201,6 +234,12 @@ with st.sidebar:
 
     st.markdown("### Bárbara Castro")
     st.markdown("Estética Avançada")
+
+    # Botão de Logout
+    if st.button("🚪 Sair do Sistema"):
+        st.session_state["logado"] = False
+        st.rerun()
+
     st.markdown("---")
     menu = st.radio("MENU", ["📊 Dashboard", "📅 Agenda", "👥 Clientes", "💉 Procedimentos", "💰 Financeiro", "📑 Relatórios",
                              "🎂 Insights (Aniversários)"])
@@ -214,9 +253,8 @@ with st.sidebar:
     st.markdown("---")
     if st.button("🔄 Atualizar Dados"): st.rerun()
 
-# ==============================================================================
-# 1. DASHBOARD
-# ==============================================================================
+# --- CONTEÚDO PRINCIPAL ---
+
 if menu == "📊 Dashboard":
     st.markdown("<div class='main-header'>Painel de Controle</div>", unsafe_allow_html=True)
     st.markdown("---")
@@ -240,9 +278,6 @@ if menu == "📊 Dashboard":
                      color_discrete_map={'Receita': '#00CC96', 'Despesa': '#EF553B'})
         st.plotly_chart(fig, use_container_width=True)
 
-# ==============================================================================
-# 2. AGENDA
-# ==============================================================================
 elif menu == "📅 Agenda":
     st.title("Agenda")
     t1, t2 = st.tabs(["Novo", "Gerenciar"])
@@ -301,9 +336,6 @@ elif menu == "📅 Agenda":
                                 df_ag.apply(lambda x: f"ID {x['id']}: {x['cliente_nome']}", axis=1))
             if st.button("🗑️ Apagar"): delete_data("agenda", int(item.split(":")[0].replace("ID ", ""))); st.rerun()
 
-# ==============================================================================
-# 3. CLIENTES
-# ==============================================================================
 elif menu == "👥 Clientes":
     st.title("Gestão de Clientes")
     modo = st.radio("Ação:", ["👤 Cadastrar", "🔍 Editar / Ficha"], horizontal=True)
@@ -354,9 +386,6 @@ elif menu == "👥 Clientes":
                     if st.button("Confirmar Exclusão", type="primary"): delete_data("clientes",
                                                                                     int(dados['id'])); st.rerun()
 
-# ==============================================================================
-# 4. PROCEDIMENTOS
-# ==============================================================================
 elif menu == "💉 Procedimentos":
     st.title("Procedimentos")
     c1, c2 = st.columns([1, 2])
@@ -375,9 +404,6 @@ elif menu == "💉 Procedimentos":
             if st.button("🗑️ Deletar"): delete_data("procedimentos",
                                                     int(df[df['nome'] == dele]['id'].values[0])); st.rerun()
 
-# ==============================================================================
-# 5. FINANCEIRO
-# ==============================================================================
 elif menu == "💰 Financeiro":
     st.title("Financeiro")
     t1, t2 = st.tabs(["Lançar", "Extrato"])
@@ -404,9 +430,6 @@ elif menu == "💰 Financeiro":
             idel = st.number_input("ID para excluir:", min_value=0)
             if st.button("🗑️ Excluir Item"): delete_data("financeiro", int(idel)); st.rerun()
 
-# ==============================================================================
-# 6. RELATÓRIOS
-# ==============================================================================
 elif menu == "📑 Relatórios":
     st.title("Relatórios")
     d1 = st.date_input("Início", value=data_hoje_br().replace(day=1), format="DD/MM/YYYY")
@@ -418,46 +441,31 @@ elif menu == "📑 Relatórios":
             st.dataframe(res)
             st.download_button("📥 Baixar Excel", to_excel(res), "faturamento.xlsx")
 
-# ==============================================================================
-# 7. INSIGHTS (ANIVERSARIANTES + WHATSAPP) 🎂
-# ==============================================================================
 elif menu == "🎂 Insights (Aniversários)":
     st.title("🎂 Aniversariantes do Mês")
     st.markdown("Aqui você vê quem faz aniversário este mês e já pode mandar um 'Parabéns' no WhatsApp!")
-
     df = get_data("clientes")
     if not df.empty:
-        # MAPA DE MESES (Tradução Manual)
-        meses_pt = {1: "Janeiro", 2: "Fevereiro", 3: "Março", 4: "Abril", 5: "Maio", 6: "Junho",
-                    7: "Julho", 8: "Agosto", 9: "Setembro", 10: "Outubro", 11: "Novembro", 12: "Dezembro"}
-
+        meses_pt = {1: "Janeiro", 2: "Fevereiro", 3: "Março", 4: "Abril", 5: "Maio", 6: "Junho", 7: "Julho",
+                    8: "Agosto", 9: "Setembro", 10: "Outubro", 11: "Novembro", 12: "Dezembro"}
         mes_atual = data_hoje_br().month
         nome_mes = meses_pt[mes_atual]
-
         df['dt_obj'] = pd.to_datetime(df['data_nascimento'], errors='coerce')
         aniversariantes = df[df['dt_obj'].dt.month == mes_atual].sort_values(by="dt_obj")
-
         if not aniversariantes.empty:
             st.balloons()
             st.success(f"Temos {len(aniversariantes)} aniversariantes em {nome_mes}! 🎉")
-
             for index, row in aniversariantes.iterrows():
                 with st.container(border=True):
                     c1, c2, c3 = st.columns([2, 2, 1])
-                    dia = row['dt_obj'].day
-                    nome = row['nome']
-                    telefone = row['telefone']
-
-                    c1.markdown(f"**Dia {dia}:** {nome}")
-                    c2.markdown(f"📞 {telefone}")
-
-                    if telefone:
-                        num_limpo = limpar_telefone(telefone)
-                        link_zap = f"https://wa.me/55{num_limpo}?text=Olá {nome}! Parabéns pelo seu dia! 🎉 Muita saúde e beleza para você!"
+                    c1.markdown(f"**Dia {row['dt_obj'].day}:** {row['nome']}")
+                    c2.markdown(f"📞 {row['telefone']}")
+                    if row['telefone']:
+                        link_zap = f"https://wa.me/55{limpar_telefone(row['telefone'])}?text=Olá {row['nome']}! Parabéns! 🎉"
                         c3.link_button("🎁 Enviar Zap", link_zap)
                     else:
                         c3.write("Sem nº")
         else:
-            st.info(f"Nenhum cliente faz aniversário em {nome_mes}. Aproveite para captar novos clientes! 😉")
+            st.info(f"Nenhum aniversariante em {nome_mes}.")
     else:
         st.warning("Cadastre clientes para ver os aniversariantes.")
