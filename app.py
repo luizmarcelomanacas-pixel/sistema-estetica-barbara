@@ -40,7 +40,7 @@ except:
 # --- FUNÇÕES DE CRUD ---
 def get_data(table):
     try:
-        response = supabase.table(table).select("*").execute()
+        response = supabase.table(table).select("*").order("id").execute()
         return pd.DataFrame(response.data)
     except:
         return pd.DataFrame()
@@ -59,7 +59,8 @@ def update_data(table, id_, data):
     try:
         supabase.table(table).update(data).eq("id", id_).execute()
         return True
-    except:
+    except Exception as e:
+        st.error(f"Erro ao atualizar: {e}")
         return False
 
 
@@ -107,64 +108,36 @@ def to_pdf(df, titulo):
 # --- FUNÇÃO DE ENVIO DE E-MAIL (AGENDA DO DIA) ---
 def enviar_agenda_email():
     try:
-        # Busca agenda
         df_ag = get_data("agenda")
         hoje_bd = date.today().strftime('%Y-%m-%d')
         hoje_br = date.today().strftime('%d/%m/%Y')
 
-        # Filtra dia atual
         df_hoje = pd.DataFrame()
         if not df_ag.empty and 'data_agendamento' in df_ag.columns:
             df_hoje = df_ag[df_ag['data_agendamento'] == hoje_bd].sort_values('hora_agendamento')
 
-        # Monta E-mail
         msg = MIMEMultipart()
         msg['From'] = EMAIL_REMETENTE
         msg['To'] = EMAIL_DESTINATARIO
         msg['Subject'] = f"📅 Agenda do Dia - {hoje_br}"
 
         if df_hoje.empty:
-            html = f"""
-            <div style="font-family: Arial, sans-serif; color: #333;">
-                <h2 style="color: #D4AF37;">Bom dia, Bárbara! ☀️</h2>
-                <p>Sua agenda está livre para hoje ({hoje_br}). Aproveite para descansar ou adiantar tarefas!</p>
-            </div>
-            """
+            html = f"""<h2 style="color: #D4AF37;">Bom dia! ☀️</h2><p>Agenda livre para hoje ({hoje_br}).</p>"""
         else:
-            tabela_html = """
-            <table style='width:100%; border-collapse: collapse; font-family: Arial;'>
+            tabela_html = """<table style='width:100%; border-collapse: collapse; font-family: Arial;'>
                 <tr style='background-color: #D4AF37; color: white;'>
-                    <th style='padding:12px; border: 1px solid #ddd;'>Hora</th>
-                    <th style='padding:12px; border: 1px solid #ddd;'>Cliente</th>
-                    <th style='padding:12px; border: 1px solid #ddd;'>Procedimento</th>
-                    <th style='padding:12px; border: 1px solid #ddd;'>Status</th>
-                </tr>
-            """
+                    <th style='padding:12px;'>Hora</th><th>Cliente</th><th>Procedimento</th><th>Status</th></tr>"""
             for _, row in df_hoje.iterrows():
                 hora = str(row['hora_agendamento'])[:5]
-                tabela_html += f"""
-                <tr>
-                    <td style='padding:10px; border: 1px solid #ddd; text-align:center'><b>{hora}</b></td>
+                tabela_html += f"""<tr><td style='padding:10px; border: 1px solid #ddd;'><b>{hora}</b></td>
                     <td style='padding:10px; border: 1px solid #ddd;'>{row['cliente_nome']}</td>
                     <td style='padding:10px; border: 1px solid #ddd;'>{row['procedimento_nome']}</td>
-                    <td style='padding:10px; border: 1px solid #ddd;'>{row['status']}</td>
-                </tr>
-                """
+                    <td style='padding:10px; border: 1px solid #ddd;'>{row['status']}</td></tr>"""
             tabela_html += "</table>"
-
-            html = f"""
-            <div style="font-family: Arial, sans-serif; color: #333;">
-                <h2 style="color: #D4AF37;">Agenda de Hoje ({hoje_br}) ✨</h2>
-                <p>Aqui estão seus atendimentos previstos:</p>
-                {tabela_html}
-                <br>
-                <p><i>Sistema de Gestão - Bárbara Castro</i></p>
-            </div>
-            """
+            html = f"""<h2 style="color: #D4AF37;">Agenda de Hoje ({hoje_br}) ✨</h2>{tabela_html}"""
 
         msg.attach(MIMEText(html, 'html'))
 
-        # Envia
         server = smtplib.SMTP('smtp.gmail.com', 587)
         server.starttls()
         server.login(EMAIL_REMETENTE, EMAIL_SENHA)
@@ -175,37 +148,30 @@ def enviar_agenda_email():
         return f"❌ Erro ao enviar: {e}"
 
 
-# --- GATILHO PARA ROBÔ (GITHUB ACTIONS) ---
+# --- GATILHO PARA ROBÔ ---
 if "rotina" in st.query_params and st.query_params["rotina"] == "disparar_email":
     st.write(enviar_agenda_email())
     st.stop()
 
-# --- SIDEBAR (MENU LATERAL) ---
+# --- MENU LATERAL ---
 with st.sidebar:
-    # FOTO (Troque o link abaixo pela sua foto real)
-    st.image("Barbara.jpeg", width=150)
+    # FOTO DE PERFIL (Para funcionar, o arquivo 'foto_perfil.png' deve estar na pasta do GitHub)
+    # Se não tiver foto, comente a linha abaixo
+    st.image("foto_perfil.png", width=150)
+
     st.markdown("### Bárbara Castro")
     st.markdown("Estética Avançada")
     st.markdown("---")
 
-    menu = st.radio("MENU", [
-        "📊 Dashboard",
-        "📅 Agenda",
-        "👥 Clientes",
-        "💉 Procedimentos",
-        "💰 Financeiro",
-        "📑 Relatórios"
-    ])
+    menu = st.radio("MENU",
+                    ["📊 Dashboard", "📅 Agenda", "👥 Clientes", "💉 Procedimentos", "💰 Financeiro", "📑 Relatórios"])
     st.markdown("---")
-
-    # Botão de teste manual de e-mail
-    if st.button("📧 Testar E-mail Agora"):
+    if st.button("📧 Testar E-mail"):
         res = enviar_agenda_email()
         if "Sucesso" in res:
             st.success(res)
         else:
             st.error(res)
-
     st.markdown("---")
     if st.button("🔄 Atualizar Dados"): st.rerun()
 
@@ -230,23 +196,20 @@ if menu == "📊 Dashboard":
     c1.metric("📅 Agenda Hoje", f"{ag_hoje} clientes")
     c2.metric("💰 Receita Total", f"R$ {receita:,.2f}")
     c3.metric("💸 Despesas", f"R$ {despesa:,.2f}")
-    c4.metric("📈 Lucro Líquido", f"R$ {lucro:,.2f}", delta_color="normal")
+    c4.metric("📈 Lucro Líquido", f"R$ {lucro:,.2f}")
 
-    st.markdown("### 📊 Gráficos")
     if not df_fin.empty:
-        fig = px.bar(df_fin, x='categoria', y='valor', color='tipo',
-                     title="Fluxo Financeiro por Categoria", barmode='group',
+        st.markdown("### 📊 Fluxo de Caixa")
+        fig = px.bar(df_fin, x='categoria', y='valor', color='tipo', barmode='group',
                      color_discrete_map={'Receita': '#00CC96', 'Despesa': '#EF553B'})
         st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("Cadastre receitas e despesas para ver os gráficos.")
 
 # ==============================================================================
-# 2. AGENDA
+# 2. AGENDA (COM EXCLUSÃO)
 # ==============================================================================
 elif menu == "📅 Agenda":
     st.title("Agenda")
-    t1, t2 = st.tabs(["Novo", "Gerenciar"])
+    t1, t2 = st.tabs(["Novo Agendamento", "Gerenciar Agenda"])
 
     df_cli = get_data("clientes")
     df_proc = get_data("procedimentos")
@@ -284,11 +247,12 @@ elif menu == "📅 Agenda":
     with t2:
         df_ag = get_data("agenda")
         if not df_ag.empty:
-            st.info("Edite o Status ou Valor diretamente na tabela.")
+            st.info("📝 Edite o Status e Valor na tabela. Para EXCLUIR, use a opção abaixo da tabela.")
+
+            # Edição na Tabela
             df_edit = df_ag[
                 ['id', 'data_agendamento', 'hora_agendamento', 'cliente_nome', 'procedimento_nome', 'status',
                  'valor_cobrado']].copy()
-
             edited = st.data_editor(
                 df_edit,
                 column_config={
@@ -299,7 +263,8 @@ elif menu == "📅 Agenda":
                 hide_index=True, use_container_width=True, key="ag_editor"
             )
 
-            if st.button("💾 Salvar Alterações"):
+            # Salvar Edições
+            if st.button("💾 Salvar Alterações (Status/Valor)"):
                 changes = 0
                 for index, row in edited.iterrows():
                     orig = df_ag[df_ag['id'] == row['id']].iloc[0]
@@ -319,12 +284,37 @@ elif menu == "📅 Agenda":
                         changes += 1
                 if changes > 0: st.success("Atualizado!"); time.sleep(1); st.rerun()
 
+            st.divider()
+
+            # --- ÁREA DE EXCLUSÃO ---
+            st.subheader("🗑️ Excluir Agendamento")
+            col_del1, col_del2 = st.columns([3, 1])
+            with col_del1:
+                # Cria uma lista legível para escolher qual deletar (Data - Hora - Cliente)
+                lista_del = df_ag.apply(
+                    lambda x: f"ID {x['id']}: {x['data_agendamento']} - {x['cliente_nome']} ({x['procedimento_nome']})",
+                    axis=1)
+                item_del = st.selectbox("Selecione o agendamento para apagar:", lista_del)
+            with col_del2:
+                st.write("")  # Espaço
+                st.write("")  # Espaço
+                if st.button("Confirmar Exclusão", type="primary"):
+                    # Extrai o ID do texto selecionado "ID 123: ..."
+                    id_real = int(item_del.split(":")[0].replace("ID ", ""))
+                    if delete_data("agenda", id_real):
+                        st.success("Agendamento Excluído!");
+                        time.sleep(1);
+                        st.rerun()
+
+        else:
+            st.info("Agenda vazia.")
+
 # ==============================================================================
-# 3. CLIENTES
+# 3. CLIENTES (COM EDIÇÃO)
 # ==============================================================================
 elif menu == "👥 Clientes":
     st.title("Clientes")
-    t1, t2 = st.tabs(["Novo", "Lista"])
+    t1, t2 = st.tabs(["Novo Cliente", "Lista & Edição"])
 
     with t1:
         with st.form("form_cli"):
@@ -346,16 +336,56 @@ elif menu == "👥 Clientes":
     with t2:
         df = get_data("clientes")
         if not df.empty:
+            st.info(
+                "📝 **Modo Edição:** Clique duas vezes sobre qualquer campo na tabela para editar (Telefone, E-mail, etc) e depois clique em **Salvar Alterações**.")
+
+            # Tabela Editável
+            edited_cli = st.data_editor(
+                df,
+                column_config={
+                    "id": st.column_config.NumberColumn(disabled=True),  # ID não pode mudar
+                    "created_at": st.column_config.DatetimeColumn(disabled=True)
+                },
+                hide_index=True, use_container_width=True, key="cli_editor"
+            )
+
+            # Botão para salvar edições
+            if st.button("💾 Salvar Alterações de Clientes"):
+                changes = 0
+                for index, row in edited_cli.iterrows():
+                    # Compara com original
+                    orig = df[df['id'] == row['id']].iloc[0]
+                    # Se houve mudança em campos importantes
+                    if (row['nome'] != orig['nome'] or row['telefone'] != orig['telefone'] or
+                            row['email'] != orig['email'] or row['anamnese'] != orig['anamnese']):
+                        update_data("clientes", int(row['id']), {
+                            "nome": row['nome'],
+                            "telefone": row['telefone'],
+                            "email": row['email'],
+                            "anamnese": row['anamnese']
+                        })
+                        changes += 1
+
+                if changes > 0:
+                    st.success(f"{changes} clientes atualizados!");
+                    time.sleep(1);
+                    st.rerun()
+                else:
+                    st.info("Nenhuma alteração encontrada.")
+
+            st.divider()
+
+            # Área de Exclusão
             c1, c2 = st.columns([3, 1])
-            with c1:
-                st.dataframe(df, use_container_width=True)
             with c2:
                 to_del = st.selectbox("Excluir Cliente", df['nome'].unique())
-                if st.button("🗑️ Confirmar"):
+                if st.button("🗑️ Deletar Cliente"):
                     pid = df[df['nome'] == to_del]['id'].values[0]
                     delete_data("clientes", int(pid));
                     st.rerun()
-            st.download_button("📥 Excel", to_excel(df), "clientes.xlsx")
+
+            with c1:
+                st.download_button("📥 Baixar Excel", to_excel(df), "clientes.xlsx")
 
 # ==============================================================================
 # 4. PROCEDIMENTOS
