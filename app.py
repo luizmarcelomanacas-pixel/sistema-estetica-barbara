@@ -3,6 +3,7 @@ import pandas as pd
 from datetime import datetime, date, timedelta
 import time
 import io
+import os
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -22,10 +23,17 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- CONFIGURAÇÃO DE E-MAIL (PREENCHA AQUI) ---
+# --- CONFIGURAÇÃO DE E-MAIL (SEUS DADOS) ---
 EMAIL_REMETENTE = 'luizmarcelomanacas@gmail.com'
-EMAIL_SENHA = 'njyt nrvd vtro jgwi'
+EMAIL_SENHA = 'njyt nrvd vtro jgwi'  # Senha de App
 EMAIL_DESTINATARIO = 'luizmarcelomanacas@gmail.com'
+
+
+# --- FUNÇÃO DATA BRASIL (CORREÇÃO FUSO HORÁRIO) ---
+def data_hoje_br():
+    # Ajusta para horário de Brasília (UTC-3)
+    return (datetime.utcnow() - timedelta(hours=3)).date()
+
 
 # --- CONEXÃO SUPABASE ---
 try:
@@ -33,11 +41,11 @@ try:
     key = st.secrets["supabase"]["key"]
     supabase: Client = create_client(url, key)
 except:
-    st.error("Erro de conexão. Verifique os Segredos.")
+    st.error("Erro de conexão. Verifique os Segredos no Streamlit.")
     st.stop()
 
 
-# --- FUNÇÕES DE CRUD ---
+# --- FUNÇÕES DE CRUD (BANCO DE DADOS) ---
 def get_data(table):
     try:
         response = supabase.table(table).select("*").order("id").execute()
@@ -86,16 +94,12 @@ def to_pdf(df, titulo):
     pdf.set_font("Arial", 'B', 14)
     pdf.cell(0, 10, f"Bárbara Castro Estética - {titulo}", ln=True, align='C')
     pdf.ln(5)
-
-    # Cabeçalho dinâmico
     cols = df.columns[:6]
     pdf.set_font("Arial", size=10)
     col_width = 280 / len(cols)
-
     for col in cols:
         pdf.cell(col_width, 10, str(col).upper(), 1, 0, 'C')
     pdf.ln()
-
     pdf.set_font("Arial", size=9)
     for i, row in df.iterrows():
         for col in cols:
@@ -109,8 +113,8 @@ def to_pdf(df, titulo):
 def enviar_agenda_email():
     try:
         df_ag = get_data("agenda")
-        hoje_bd = date.today().strftime('%Y-%m-%d')
-        hoje_br = date.today().strftime('%d/%m/%Y')
+        hoje_bd = str(data_hoje_br())  # YYYY-MM-DD
+        hoje_br = data_hoje_br().strftime('%d/%m/%Y')  # DD/MM/YYYY
 
         df_hoje = pd.DataFrame()
         if not df_ag.empty and 'data_agendamento' in df_ag.columns:
@@ -153,16 +157,21 @@ if "rotina" in st.query_params and st.query_params["rotina"] == "disparar_email"
     st.write(enviar_agenda_email())
     st.stop()
 
-# --- MENU LATERAL ---
+# --- MENU LATERAL (SIDEBAR) ---
 with st.sidebar:
-    # FOTO DE PERFIL (Para funcionar, o arquivo 'foto_perfil.png' deve estar na pasta do GitHub)
-    # Se não tiver foto, comente a linha abaixo
-    st.image("Barbara.jpeg", width=150)
+    # --- FOTO DE PERFIL (Barbara.jpeg) ---
+    # Verifica se o arquivo existe para não dar erro
+    if os.path.exists("Barbara.jpeg"):
+        st.image("Barbara.jpeg", width=150)
+    elif os.path.exists("barbara.jpeg"):  # Tenta minúsculo por segurança
+        st.image("barbara.jpeg", width=150)
+    else:
+        # Foto genérica se não encontrar o arquivo
+        st.image("https://cdn-icons-png.flaticon.com/512/3135/3135715.png", width=150)
 
     st.markdown("### Bárbara Castro")
     st.markdown("Estética Avançada")
     st.markdown("---")
-
     menu = st.radio("MENU",
                     ["📊 Dashboard", "📅 Agenda", "👥 Clientes", "💉 Procedimentos", "💰 Financeiro", "📑 Relatórios"])
     st.markdown("---")
@@ -185,7 +194,8 @@ if menu == "📊 Dashboard":
     df_ag = get_data("agenda")
     df_fin = get_data("financeiro")
 
-    hoje = date.today().strftime('%Y-%m-%d')
+    hoje = str(data_hoje_br())
+
     ag_hoje = len(df_ag[df_ag['data_agendamento'] == hoje]) if not df_ag.empty else 0
 
     receita = df_fin[df_fin['tipo'] == 'Receita']['valor'].sum() if not df_fin.empty else 0
@@ -205,7 +215,7 @@ if menu == "📊 Dashboard":
         st.plotly_chart(fig, use_container_width=True)
 
 # ==============================================================================
-# 2. AGENDA (COM EXCLUSÃO)
+# 2. AGENDA
 # ==============================================================================
 elif menu == "📅 Agenda":
     st.title("Agenda")
@@ -224,7 +234,7 @@ elif menu == "📅 Agenda":
                 proc = c2.selectbox("Procedimento", df_proc['nome'].unique())
 
                 c3, c4 = st.columns(2)
-                dt_ag = c3.date_input("Data", format="DD/MM/YYYY")
+                dt_ag = c3.date_input("Data", value=data_hoje_br(), format="DD/MM/YYYY")
                 hr_ag = c4.time_input("Hora")
                 obs = st.text_area("Obs")
 
@@ -247,9 +257,8 @@ elif menu == "📅 Agenda":
     with t2:
         df_ag = get_data("agenda")
         if not df_ag.empty:
-            st.info("📝 Edite o Status e Valor na tabela. Para EXCLUIR, use a opção abaixo da tabela.")
+            st.info("⚠️ **Dica:** Mude o status para **'Concluído'** e salve para lançar no Financeiro.")
 
-            # Edição na Tabela
             df_edit = df_ag[
                 ['id', 'data_agendamento', 'hora_agendamento', 'cliente_nome', 'procedimento_nome', 'status',
                  'valor_cobrado']].copy()
@@ -263,8 +272,7 @@ elif menu == "📅 Agenda":
                 hide_index=True, use_container_width=True, key="ag_editor"
             )
 
-            # Salvar Edições
-            if st.button("💾 Salvar Alterações (Status/Valor)"):
+            if st.button("💾 Salvar Alterações (Mandar p/ Financeiro)"):
                 changes = 0
                 for index, row in edited.iterrows():
                     orig = df_ag[df_ag['id'] == row['id']].iloc[0]
@@ -272,49 +280,41 @@ elif menu == "📅 Agenda":
                         update_data("agenda", int(row['id']),
                                     {"status": row['status'], "valor_cobrado": float(row['valor_cobrado'])})
 
+                        # Lança no financeiro se concluir
                         if row['status'] == "Concluído" and orig['status'] != "Concluído":
                             fin_data = {
                                 "descricao": f"Atendimento: {row['cliente_nome']}",
                                 "valor": float(row['valor_cobrado']), "tipo": "Receita",
-                                "categoria": "Atendimento", "data_movimento": str(date.today()),
+                                "categoria": "Atendimento", "data_movimento": str(data_hoje_br()),
                                 "forma_pagamento": "Indefinido"
                             }
                             add_data("financeiro", fin_data)
-                            st.toast(f"💰 R$ {row['valor_cobrado']} lançado no caixa!")
+                            st.toast(f"💰 Receita de R$ {row['valor_cobrado']} lançada!", icon="✅")
                         changes += 1
                 if changes > 0: st.success("Atualizado!"); time.sleep(1); st.rerun()
 
             st.divider()
-
-            # --- ÁREA DE EXCLUSÃO ---
             st.subheader("🗑️ Excluir Agendamento")
-            col_del1, col_del2 = st.columns([3, 1])
-            with col_del1:
-                # Cria uma lista legível para escolher qual deletar (Data - Hora - Cliente)
-                lista_del = df_ag.apply(
-                    lambda x: f"ID {x['id']}: {x['data_agendamento']} - {x['cliente_nome']} ({x['procedimento_nome']})",
-                    axis=1)
-                item_del = st.selectbox("Selecione o agendamento para apagar:", lista_del)
-            with col_del2:
-                st.write("")  # Espaço
-                st.write("")  # Espaço
+            c_del1, c_del2 = st.columns([3, 1])
+            with c_del1:
+                lista_del = df_ag.apply(lambda x: f"ID {x['id']}: {x['data_agendamento']} - {x['cliente_nome']}",
+                                        axis=1)
+                item_del = st.selectbox("Selecione para apagar:", lista_del)
+            with c_del2:
+                st.write("");
+                st.write("")
                 if st.button("Confirmar Exclusão", type="primary"):
-                    # Extrai o ID do texto selecionado "ID 123: ..."
                     id_real = int(item_del.split(":")[0].replace("ID ", ""))
-                    if delete_data("agenda", id_real):
-                        st.success("Agendamento Excluído!");
-                        time.sleep(1);
-                        st.rerun()
-
+                    if delete_data("agenda", id_real): st.success("Apagado!"); time.sleep(1); st.rerun()
         else:
             st.info("Agenda vazia.")
 
 # ==============================================================================
-# 3. CLIENTES (COM EDIÇÃO)
+# 3. CLIENTES
 # ==============================================================================
 elif menu == "👥 Clientes":
     st.title("Clientes")
-    t1, t2 = st.tabs(["Novo Cliente", "Lista & Edição"])
+    t1, t2 = st.tabs(["Novo", "Lista/Edição"])
 
     with t1:
         with st.form("form_cli"):
@@ -336,56 +336,36 @@ elif menu == "👥 Clientes":
     with t2:
         df = get_data("clientes")
         if not df.empty:
-            st.info(
-                "📝 **Modo Edição:** Clique duas vezes sobre qualquer campo na tabela para editar (Telefone, E-mail, etc) e depois clique em **Salvar Alterações**.")
-
-            # Tabela Editável
+            st.info("📝 Clique duas vezes na tabela para editar.")
             edited_cli = st.data_editor(
                 df,
-                column_config={
-                    "id": st.column_config.NumberColumn(disabled=True),  # ID não pode mudar
-                    "created_at": st.column_config.DatetimeColumn(disabled=True)
-                },
+                column_config={"id": st.column_config.NumberColumn(disabled=True),
+                               "created_at": st.column_config.DatetimeColumn(disabled=True)},
                 hide_index=True, use_container_width=True, key="cli_editor"
             )
 
-            # Botão para salvar edições
-            if st.button("💾 Salvar Alterações de Clientes"):
+            if st.button("💾 Salvar Alterações Clientes"):
                 changes = 0
                 for index, row in edited_cli.iterrows():
-                    # Compara com original
                     orig = df[df['id'] == row['id']].iloc[0]
-                    # Se houve mudança em campos importantes
                     if (row['nome'] != orig['nome'] or row['telefone'] != orig['telefone'] or
                             row['email'] != orig['email'] or row['anamnese'] != orig['anamnese']):
-                        update_data("clientes", int(row['id']), {
-                            "nome": row['nome'],
-                            "telefone": row['telefone'],
-                            "email": row['email'],
-                            "anamnese": row['anamnese']
-                        })
+                        update_data("clientes", int(row['id']),
+                                    {"nome": row['nome'], "telefone": row['telefone'], "email": row['email'],
+                                     "anamnese": row['anamnese']})
                         changes += 1
-
-                if changes > 0:
-                    st.success(f"{changes} clientes atualizados!");
-                    time.sleep(1);
-                    st.rerun()
-                else:
-                    st.info("Nenhuma alteração encontrada.")
+                if changes > 0: st.success("Atualizado!"); time.sleep(1); st.rerun()
 
             st.divider()
-
-            # Área de Exclusão
             c1, c2 = st.columns([3, 1])
             with c2:
                 to_del = st.selectbox("Excluir Cliente", df['nome'].unique())
-                if st.button("🗑️ Deletar Cliente"):
+                if st.button("🗑️ Deletar"):
                     pid = df[df['nome'] == to_del]['id'].values[0]
                     delete_data("clientes", int(pid));
                     st.rerun()
-
             with c1:
-                st.download_button("📥 Baixar Excel", to_excel(df), "clientes.xlsx")
+                st.download_button("📥 Excel", to_excel(df), "clientes.xlsx")
 
 # ==============================================================================
 # 4. PROCEDIMENTOS
@@ -427,7 +407,7 @@ elif menu == "💰 Financeiro":
             tipo = c1.selectbox("Tipo", ["Despesa", "Receita"])
             desc = c2.text_input("Descrição")
             val = c1.number_input("Valor", min_value=0.0)
-            dt = c2.date_input("Data", format="DD/MM/YYYY")
+            dt = c2.date_input("Data", value=data_hoje_br(), format="DD/MM/YYYY")
             cat = c1.selectbox("Categoria", ["Atendimento", "Produtos", "Aluguel", "Outros"])
             pag = c2.selectbox("Pagamento", ["Pix", "Cartão", "Dinheiro"])
             if st.form_submit_button("Lançar"):
@@ -441,7 +421,7 @@ elif menu == "💰 Financeiro":
     with t2:
         df = get_data("financeiro")
         if not df.empty:
-            mes = st.slider("Filtrar Mês", 1, 12, date.today().month)
+            mes = st.slider("Filtrar Mês", 1, 12, data_hoje_br().month)
             df['dt'] = pd.to_datetime(df['data_movimento'])
             df_filtro = df[df['dt'].dt.month == mes]
 
@@ -458,7 +438,7 @@ elif menu == "💰 Financeiro":
             c1.download_button("📥 Excel", to_excel(df_filtro), "financeiro.xlsx")
             c2.download_button("📄 PDF", to_pdf(df_filtro, f"Mes {mes}"), "financeiro.pdf")
 
-            to_del = st.number_input("ID para Excluir", min_value=0)
+            to_del = st.number_input("ID para Excluir (Veja na tabela)", min_value=0)
             if st.button("🗑️ Excluir por ID"):
                 delete_data("financeiro", int(to_del));
                 st.rerun()
@@ -469,8 +449,8 @@ elif menu == "💰 Financeiro":
 elif menu == "📑 Relatórios":
     st.title("Relatórios")
     tipo = st.selectbox("Tipo", ["Faturamento", "Atendimentos"])
-    d1 = st.date_input("Início", value=date.today().replace(day=1), format="DD/MM/YYYY")
-    d2 = st.date_input("Fim", format="DD/MM/YYYY")
+    d1 = st.date_input("Início", value=data_hoje_br().replace(day=1), format="DD/MM/YYYY")
+    d2 = st.date_input("Fim", value=data_hoje_br(), format="DD/MM/YYYY")
 
     if st.button("Gerar"):
         if tipo == "Faturamento":
