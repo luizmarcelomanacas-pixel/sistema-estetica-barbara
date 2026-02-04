@@ -46,7 +46,6 @@ except:
 
 # --- FUNÇÕES ÚTEIS ---
 def limpar_telefone(telefone):
-    """Remove ( ) - e espaços para criar link do WhatsApp"""
     if not telefone: return ""
     nums = ''.join(filter(str.isdigit, str(telefone)))
     return nums
@@ -86,7 +85,7 @@ def delete_data(table, id_):
         return False
 
 
-# --- GERADOR DE PDF INDIVIDUAL (PROFISSIONAL) ---
+# --- GERADOR DE PDF INDIVIDUAL (SEM FOTO) ---
 def gerar_ficha_individual(dados_cliente):
     pdf = FPDF()
     pdf.add_page()
@@ -127,7 +126,7 @@ def gerar_ficha_individual(dados_cliente):
     pdf.set_font("Arial", size=11)
     pdf.multi_cell(0, 8, txt=str(dados_cliente.get('anamnese', 'Nenhuma observação.')))
 
-    # Assinatura
+    # Rodapé
     pdf.ln(40)
     pdf.set_font("Arial", size=10)
     pdf.cell(0, 5, "________________________________________________________", ln=True, align='C')
@@ -428,16 +427,20 @@ elif menu == "🎂 Insights (Aniversários)":
 
     df = get_data("clientes")
     if not df.empty:
-        # Filtra aniversariantes do mês atual
+        # MAPA DE MESES (Tradução Manual)
+        meses_pt = {1: "Janeiro", 2: "Fevereiro", 3: "Março", 4: "Abril", 5: "Maio", 6: "Junho",
+                    7: "Julho", 8: "Agosto", 9: "Setembro", 10: "Outubro", 11: "Novembro", 12: "Dezembro"}
+
         mes_atual = data_hoje_br().month
+        nome_mes = meses_pt[mes_atual]
+
         df['dt_obj'] = pd.to_datetime(df['data_nascimento'], errors='coerce')
         aniversariantes = df[df['dt_obj'].dt.month == mes_atual].sort_values(by="dt_obj")
 
         if not aniversariantes.empty:
-            st.balloons()  # Efeito de festa
-            st.success(f"Temos {len(aniversariantes)} aniversariantes em {datetime.now().strftime('%B')}! 🎉")
+            st.balloons()
+            st.success(f"Temos {len(aniversariantes)} aniversariantes em {nome_mes}! 🎉")
 
-            # Mostra lista com botão de WhatsApp
             for index, row in aniversariantes.iterrows():
                 with st.container(border=True):
                     c1, c2, c3 = st.columns([2, 2, 1])
@@ -448,7 +451,6 @@ elif menu == "🎂 Insights (Aniversários)":
                     c1.markdown(f"**Dia {dia}:** {nome}")
                     c2.markdown(f"📞 {telefone}")
 
-                    # Botão Mágico do WhatsApp
                     if telefone:
                         num_limpo = limpar_telefone(telefone)
                         link_zap = f"https://wa.me/55{num_limpo}?text=Olá {nome}! Parabéns pelo seu dia! 🎉 Muita saúde e beleza para você!"
@@ -456,6 +458,6 @@ elif menu == "🎂 Insights (Aniversários)":
                     else:
                         c3.write("Sem nº")
         else:
-            st.info("Nenhum cliente faz aniversário neste mês. Aproveite para captar novos clientes! 😉")
+            st.info(f"Nenhum cliente faz aniversário em {nome_mes}. Aproveite para captar novos clientes! 😉")
     else:
         st.warning("Cadastre clientes para ver os aniversariantes.")
