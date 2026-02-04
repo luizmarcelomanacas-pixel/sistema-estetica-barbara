@@ -157,7 +157,7 @@ if "rotina" in st.query_params and st.query_params["rotina"] == "disparar_email"
 with st.sidebar:
     # FOTO DE PERFIL (Para funcionar, o arquivo 'foto_perfil.png' deve estar na pasta do GitHub)
     # Se não tiver foto, comente a linha abaixo
-    st.image("foto_perfil.png", width=150)
+    st.image("Barbara.jpeg", width=150)
 
     st.markdown("### Bárbara Castro")
     st.markdown("Estética Avançada")
