@@ -44,7 +44,14 @@ except:
     st.stop()
 
 
-# --- FUNÇÕES DE CRUD ---
+# --- FUNÇÕES ÚTEIS ---
+def limpar_telefone(telefone):
+    """Remove ( ) - e espaços para criar link do WhatsApp"""
+    if not telefone: return ""
+    nums = ''.join(filter(str.isdigit, str(telefone)))
+    return nums
+
+
 def get_data(table):
     try:
         response = supabase.table(table).select("*").order("id").execute()
@@ -79,25 +86,23 @@ def delete_data(table, id_):
         return False
 
 
-# --- GERADOR DE PDF INDIVIDUAL (SEM FOTO) ---
+# --- GERADOR DE PDF INDIVIDUAL (PROFISSIONAL) ---
 def gerar_ficha_individual(dados_cliente):
     pdf = FPDF()
     pdf.add_page()
 
-    # 1. Cabeçalho (Apenas Texto Profissional)
-    pdf.set_y(15)  # Margem superior
+    # Cabeçalho
+    pdf.set_y(15)
     pdf.set_font("Arial", 'B', 18)
     pdf.cell(0, 10, "Bárbara Castro Estética Avançada", ln=True, align='C')
-
     pdf.set_font("Arial", 'I', 12)
-    pdf.cell(0, 10, "Ficha de Anamnese e Histórico do Cliente", ln=True, align='C')
+    pdf.cell(0, 10, "Ficha de Anamnese e Histórico", ln=True, align='C')
+    pdf.ln(15)
 
-    pdf.ln(15)  # Espaço maior após o título
-
-    # 2. Dados do Cliente
+    # Dados
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 10, "DADOS DO CLIENTE:", ln=True)
-    pdf.line(10, pdf.get_y(), 200, pdf.get_y())  # Linha horizontal
+    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.ln(5)
 
     pdf.set_font("Arial", size=12)
@@ -105,28 +110,25 @@ def gerar_ficha_individual(dados_cliente):
     pdf.cell(0, 8, f"Telefone: {dados_cliente['telefone']}", ln=True)
     pdf.cell(0, 8, f"E-mail: {dados_cliente['email']}", ln=True)
 
-    # Data formatada
     nasc = dados_cliente.get('data_nascimento', '')
     if nasc:
         try:
             d = datetime.strptime(nasc, '%Y-%m-%d').strftime('%d/%m/%Y')
             pdf.cell(0, 8, f"Data de Nascimento: {d}", ln=True)
         except:
-            pdf.cell(0, 8, f"Data de Nascimento: {nasc}", ln=True)
-
+            pass
     pdf.ln(10)
 
-    # 3. Anamnese
+    # Anamnese
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 10, "HISTÓRICO / ANAMNESE:", ln=True)
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.ln(5)
     pdf.set_font("Arial", size=11)
-    # Multi_cell para texto longo quebrar linha
-    pdf.multi_cell(0, 8, txt=str(dados_cliente.get('anamnese', 'Nenhuma observação registrada.')))
+    pdf.multi_cell(0, 8, txt=str(dados_cliente.get('anamnese', 'Nenhuma observação.')))
 
-    # 4. Assinatura no Rodapé
-    pdf.ln(40)  # Espaço grande para descer
+    # Assinatura
+    pdf.ln(40)
     pdf.set_font("Arial", size=10)
     pdf.cell(0, 5, "________________________________________________________", ln=True, align='C')
     pdf.cell(0, 5, "Bárbara Castro - Estética Avançada", ln=True, align='C')
@@ -135,7 +137,7 @@ def gerar_ficha_individual(dados_cliente):
     return pdf.output(dest='S').encode('latin-1')
 
 
-# --- GERADOR DE RELATÓRIO GERAL (EXCEL) ---
+# --- EXCEL ---
 def to_excel(df):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
@@ -143,13 +145,12 @@ def to_excel(df):
     return output.getvalue()
 
 
-# --- FUNÇÃO E-MAIL ---
+# --- E-MAIL ---
 def enviar_agenda_email():
     try:
         df_ag = get_data("agenda")
         hoje_bd = str(data_hoje_br())
         hoje_br = data_hoje_br().strftime('%d/%m/%Y')
-
         df_hoje = pd.DataFrame()
         if not df_ag.empty and 'data_agendamento' in df_ag.columns:
             df_hoje = df_ag[df_ag['data_agendamento'] == hoje_bd].sort_values('hora_agendamento')
@@ -175,7 +176,6 @@ def enviar_agenda_email():
             html = f"""<h2 style="color: #D4AF37;">Agenda de Hoje ({hoje_br}) ✨</h2>{tabela_html}"""
 
         msg.attach(MIMEText(html, 'html'))
-
         server = smtplib.SMTP('smtp.gmail.com', 587)
         server.starttls()
         server.login(EMAIL_REMETENTE, EMAIL_SENHA)
@@ -183,7 +183,7 @@ def enviar_agenda_email():
         server.quit()
         return "✅ E-mail enviado com sucesso!"
     except Exception as e:
-        return f"❌ Erro ao enviar: {e}"
+        return f"❌ Erro: {e}"
 
 
 # --- GATILHO ROBÔ ---
@@ -203,8 +203,8 @@ with st.sidebar:
     st.markdown("### Bárbara Castro")
     st.markdown("Estética Avançada")
     st.markdown("---")
-    menu = st.radio("MENU",
-                    ["📊 Dashboard", "📅 Agenda", "👥 Clientes", "💉 Procedimentos", "💰 Financeiro", "📑 Relatórios"])
+    menu = st.radio("MENU", ["📊 Dashboard", "📅 Agenda", "👥 Clientes", "💉 Procedimentos", "💰 Financeiro", "📑 Relatórios",
+                             "🎂 Insights (Aniversários)"])
     st.markdown("---")
     if st.button("📧 Testar E-mail"):
         res = enviar_agenda_email()
@@ -221,11 +221,9 @@ with st.sidebar:
 if menu == "📊 Dashboard":
     st.markdown("<div class='main-header'>Painel de Controle</div>", unsafe_allow_html=True)
     st.markdown("---")
-
     df_ag = get_data("agenda")
     df_fin = get_data("financeiro")
     hoje = str(data_hoje_br())
-
     ag_hoje = len(df_ag[df_ag['data_agendamento'] == hoje]) if not df_ag.empty else 0
     receita = df_fin[df_fin['tipo'] == 'Receita']['valor'].sum() if not df_fin.empty else 0
     despesa = df_fin[df_fin['tipo'] == 'Despesa']['valor'].sum() if not df_fin.empty else 0
@@ -248,191 +246,114 @@ if menu == "📊 Dashboard":
 # ==============================================================================
 elif menu == "📅 Agenda":
     st.title("Agenda")
-    t1, t2 = st.tabs(["Novo Agendamento", "Gerenciar Agenda"])
-
+    t1, t2 = st.tabs(["Novo", "Gerenciar"])
     df_cli = get_data("clientes")
     df_proc = get_data("procedimentos")
-
     with t1:
         if df_cli.empty or df_proc.empty:
-            st.warning("Cadastre Clientes e Procedimentos primeiro.")
+            st.warning("Cadastre clientes/procedimentos.")
         else:
             with st.form("nova_agenda"):
                 c1, c2 = st.columns(2)
                 cli = c1.selectbox("Cliente", df_cli['nome'].unique())
                 proc = c2.selectbox("Procedimento", df_proc['nome'].unique())
-
                 c3, c4 = st.columns(2)
                 dt_ag = c3.date_input("Data", value=data_hoje_br(), format="DD/MM/YYYY")
                 hr_ag = c4.time_input("Hora")
                 obs = st.text_area("Obs")
-
                 if st.form_submit_button("Agendar"):
                     cid = df_cli[df_cli['nome'] == cli]['id'].values[0]
                     pid = df_proc[df_proc['nome'] == proc]['id'].values[0]
                     val = df_proc[df_proc['nome'] == proc]['valor'].values[0]
-
-                    dados = {
-                        "cliente_id": int(cid), "cliente_nome": cli,
-                        "procedimento_id": int(pid), "procedimento_nome": proc,
-                        "valor_cobrado": float(val), "data_agendamento": str(dt_ag),
-                        "hora_agendamento": str(hr_ag), "status": "Agendado", "observacoes": obs
-                    }
-                    if add_data("agenda", dados):
-                        st.success("Agendado!");
-                        time.sleep(1);
-                        st.rerun()
-
+                    add_data("agenda", {"cliente_id": int(cid), "cliente_nome": cli, "procedimento_id": int(pid),
+                                        "procedimento_nome": proc, "valor_cobrado": float(val),
+                                        "data_agendamento": str(dt_ag), "hora_agendamento": str(hr_ag),
+                                        "status": "Agendado", "observacoes": obs})
+                    st.success("Agendado!");
+                    time.sleep(1);
+                    st.rerun()
     with t2:
         df_ag = get_data("agenda")
         if not df_ag.empty:
-            st.info("⚠️ Para lançar no caixa, mude para **Concluído** e Salve.")
-            df_edit = df_ag[
-                ['id', 'data_agendamento', 'hora_agendamento', 'cliente_nome', 'procedimento_nome', 'status',
-                 'valor_cobrado']].copy()
-            edited = st.data_editor(
-                df_edit,
-                column_config={
-                    "status": st.column_config.SelectboxColumn("Status", options=["Agendado", "Concluído", "Cancelado"],
-                                                               required=True),
-                    "valor_cobrado": st.column_config.NumberColumn("Valor (R$)", format="R$ %.2f")
-                },
-                hide_index=True, use_container_width=True, key="ag_editor"
-            )
-
+            st.info("Para ir pro caixa, marque como **Concluído** e salve.")
+            edited = st.data_editor(df_ag[['id', 'data_agendamento', 'hora_agendamento', 'cliente_nome',
+                                           'procedimento_nome', 'status', 'valor_cobrado']], column_config={
+                "status": st.column_config.SelectboxColumn("Status", options=["Agendado", "Concluído", "Cancelado"],
+                                                           required=True)}, hide_index=True, use_container_width=True,
+                                    key="ag_ed")
             if st.button("💾 Salvar Alterações"):
-                changes = 0
-                for index, row in edited.iterrows():
+                for i, row in edited.iterrows():
                     orig = df_ag[df_ag['id'] == row['id']].iloc[0]
                     if row['status'] != orig['status'] or row['valor_cobrado'] != orig['valor_cobrado']:
                         update_data("agenda", int(row['id']),
                                     {"status": row['status'], "valor_cobrado": float(row['valor_cobrado'])})
                         if row['status'] == "Concluído" and orig['status'] != "Concluído":
-                            fin_data = {
-                                "descricao": f"Atendimento: {row['cliente_nome']}",
-                                "valor": float(row['valor_cobrado']), "tipo": "Receita",
-                                "categoria": "Atendimento", "data_movimento": str(data_hoje_br()),
-                                "forma_pagamento": "Indefinido"
-                            }
-                            add_data("financeiro", fin_data)
-                            st.toast(f"💰 Receita lançada!", icon="✅")
-                        changes += 1
-                if changes > 0: st.success("Salvo!"); time.sleep(1); st.rerun()
-
+                            add_data("financeiro", {"descricao": f"Atendimento: {row['cliente_nome']}",
+                                                    "valor": float(row['valor_cobrado']), "tipo": "Receita",
+                                                    "categoria": "Atendimento", "data_movimento": str(data_hoje_br()),
+                                                    "forma_pagamento": "Indefinido"})
+                            st.toast("💰 Receita lançada!");
+                            time.sleep(1)
+                st.success("Salvo!");
+                time.sleep(1);
+                st.rerun()
             st.divider()
-            c1, c2 = st.columns([3, 1])
-            with c1:
-                item_del = st.selectbox("Excluir Agendamento:", df_ag.apply(
-                    lambda x: f"ID {x['id']}: {x['data_agendamento']} - {x['cliente_nome']}", axis=1))
-            with c2:
-                st.write("");
-                st.write("")
-                if st.button("🗑️ Apagar"):
-                    id_real = int(item_del.split(":")[0].replace("ID ", ""))
-                    delete_data("agenda", id_real);
-                    st.rerun()
-        else:
-            st.info("Vazia.")
+            item = st.selectbox("Excluir Agendamento:",
+                                df_ag.apply(lambda x: f"ID {x['id']}: {x['cliente_nome']}", axis=1))
+            if st.button("🗑️ Apagar"): delete_data("agenda", int(item.split(":")[0].replace("ID ", ""))); st.rerun()
 
 # ==============================================================================
-# 3. CLIENTES (TOTALMENTE RENOVADO)
+# 3. CLIENTES
 # ==============================================================================
 elif menu == "👥 Clientes":
     st.title("Gestão de Clientes")
-
-    # Opção Principal
-    modo = st.radio("O que você deseja fazer?", ["👤 Cadastrar Novo Cliente", "🔍 Pesquisar / Editar / Ficha"],
-                    horizontal=True)
+    modo = st.radio("Ação:", ["👤 Cadastrar", "🔍 Editar / Ficha"], horizontal=True)
     st.markdown("---")
-
-    # MODO 1: CADASTRAR NOVO
-    if modo == "👤 Cadastrar Novo Cliente":
-        st.subheader("Novo Cadastro")
+    if modo == "👤 Cadastrar":
         with st.form("form_cli_novo"):
-            nome = st.text_input("Nome Completo*")
-            tel = st.text_input("Telefone (WhatsApp)")
-            email = st.text_input("E-mail")
-            nasc = st.date_input("Data de Nascimento", min_value=date(1920, 1, 1), format="DD/MM/YYYY")
-            anam = st.text_area("Ficha de Anamnese / Observações")
-
-            if st.form_submit_button("💾 Salvar Novo Cliente"):
+            nome = st.text_input("Nome*")
+            tel = st.text_input("Zap")
+            email = st.text_input("Email")
+            nasc = st.date_input("Nascimento", min_value=date(1920, 1, 1), format="DD/MM/YYYY")
+            anam = st.text_area("Anamnese")
+            if st.form_submit_button("Salvar"):
                 if nome:
                     add_data("clientes", {"nome": nome, "telefone": tel, "email": email, "data_nascimento": str(nasc),
                                           "anamnese": anam})
-                    st.success(f"Cliente {nome} cadastrado com sucesso!");
+                    st.success("Cadastrado!");
                     time.sleep(1);
                     st.rerun()
                 else:
-                    st.error("O nome é obrigatório.")
-
-    # MODO 2: PESQUISAR E EDITAR (A PEDIDO: MESMA TELA)
+                    st.error("Nome obrigatório.")
     else:
         df = get_data("clientes")
-        if df.empty:
-            st.warning("Nenhum cliente cadastrado ainda.")
-        else:
-            # Seleção do Cliente
-            lista_nomes = df['nome'].unique()
-            cliente_sel = st.selectbox("📂 Selecione o Cliente para gerenciar:", lista_nomes)
-
-            # Pega os dados do cliente selecionado
-            dados = df[df['nome'] == cliente_sel].iloc[0]
-            id_cli = int(dados['id'])
-
-            # Formulário Preenchido (Para Editar)
-            st.subheader(f"Editando: {cliente_sel}")
-            with st.form("form_cli_edit"):
-                # Campos vêm preenchidos com o 'value' atual
-                novo_nome = st.text_input("Nome", value=dados['nome'])
-                novo_tel = st.text_input("Telefone", value=dados['telefone'])
-                novo_email = st.text_input("E-mail", value=dados['email'])
-
-                # Tratamento de data para não dar erro se estiver vazia
+        if not df.empty:
+            sel = st.selectbox("Selecione:", df['nome'].unique())
+            dados = df[df['nome'] == sel].iloc[0]
+            st.subheader(f"Editando: {sel}")
+            with st.form("ed_cli"):
+                nn = st.text_input("Nome", value=dados['nome'])
+                nt = st.text_input("Zap", value=dados['telefone'])
+                ne = st.text_input("Email", value=dados['email'])
                 try:
-                    data_atual = datetime.strptime(dados['data_nascimento'], '%Y-%m-%d').date()
+                    da = datetime.strptime(dados['data_nascimento'], '%Y-%m-%d').date()
                 except:
-                    data_atual = date.today()
-
-                novo_nasc = st.date_input("Data de Nascimento", value=data_atual, format="DD/MM/YYYY")
-                nova_anam = st.text_area("Anamnese", value=dados['anamnese'], height=150)
-
-                # Botões lado a lado
-                c1, c2, c3 = st.columns([1, 1, 1])
-
-                with c1:
-                    if st.form_submit_button("💾 Salvar Alterações"):
-                        update_data("clientes", id_cli, {
-                            "nome": novo_nome, "telefone": novo_tel,
-                            "email": novo_email, "data_nascimento": str(novo_nasc),
-                            "anamnese": nova_anam
-                        })
-                        st.success("Dados atualizados!");
-                        time.sleep(1);
-                        st.rerun()
-
-            # Ações Extras fora do Form (para não submeter o form ao clicar)
-            c_pdf, c_del = st.columns([1, 1])
-
-            with c_pdf:
-                # Botão de PDF Individual
-                pdf_bytes = gerar_ficha_individual(dados)
-                st.download_button(
-                    label="📄 Baixar Ficha Completa (PDF)",
-                    data=pdf_bytes,
-                    file_name=f"Ficha_{cliente_sel}.pdf",
-                    mime="application/pdf",
-                    use_container_width=True
-                )
-
-            with c_del:
-                # Botão de Excluir com confirmação
-                with st.expander("🗑️ Zona de Perigo (Excluir)"):
-                    st.write("Tem certeza? Isso apaga o cliente para sempre.")
-                    if st.button("Confirmar Exclusão do Cliente", type="primary"):
-                        delete_data("clientes", id_cli)
-                        st.success("Cliente apagado.");
-                        time.sleep(1);
-                        st.rerun()
+                    da = date.today()
+                nna = st.date_input("Nascimento", value=da, format="DD/MM/YYYY")
+                nan = st.text_area("Anamnese", value=dados['anamnese'])
+                if st.form_submit_button("💾 Salvar"):
+                    update_data("clientes", int(dados['id']),
+                                {"nome": nn, "telefone": nt, "email": ne, "data_nascimento": str(nna), "anamnese": nan})
+                    st.success("Atualizado!");
+                    time.sleep(1);
+                    st.rerun()
+            c1, c2 = st.columns(2)
+            c1.download_button("📄 Baixar Ficha PDF", data=gerar_ficha_individual(dados), file_name=f"Ficha_{sel}.pdf",
+                               mime="application/pdf")
+            with c2:
+                with st.expander("🗑️ Excluir"):
+                    if st.button("Confirmar Exclusão", type="primary"): delete_data("clientes",
+                                                                                    int(dados['id'])); st.rerun()
 
 # ==============================================================================
 # 4. PROCEDIMENTOS
@@ -441,101 +362,100 @@ elif menu == "💉 Procedimentos":
     st.title("Procedimentos")
     c1, c2 = st.columns([1, 2])
     with c1:
-        with st.form("proc_form"):
+        with st.form("pf"):
             n = st.text_input("Nome");
-            v = st.number_input("Valor", min_value=0.0);
-            d = st.number_input("Minutos", value=30)
-            cat = st.selectbox("Categoria", ["Facial", "Corporal", "Outros"])
-            if st.form_submit_button("Salvar"):
-                add_data("procedimentos", {"nome": n, "valor": v, "duracao_min": d, "categoria": cat})
-                st.success("Salvo!");
-                time.sleep(1);
-                st.rerun()
+            v = st.number_input("R$", min_value=0.0);
+            d = st.number_input("Min", value=30)
+            if st.form_submit_button("Salvar"): add_data("procedimentos", {"nome": n, "valor": v, "duracao_min": d,
+                                                                           "categoria": "Geral"}); st.rerun()
     with c2:
         df = get_data("procedimentos")
         if not df.empty:
             st.dataframe(df, use_container_width=True)
-            to_del = st.selectbox("Excluir", df['nome'].unique())
-            if st.button("🗑️ Deletar"):
-                pid = df[df['nome'] == to_del]['id'].values[0]
-                delete_data("procedimentos", int(pid));
-                st.rerun()
+            dele = st.selectbox("Excluir:", df['nome'].unique())
+            if st.button("🗑️ Deletar"): delete_data("procedimentos",
+                                                    int(df[df['nome'] == dele]['id'].values[0])); st.rerun()
 
 # ==============================================================================
 # 5. FINANCEIRO
 # ==============================================================================
 elif menu == "💰 Financeiro":
     st.title("Financeiro")
-    t1, t2 = st.tabs(["Lançamento", "Extrato"])
-
+    t1, t2 = st.tabs(["Lançar", "Extrato"])
     with t1:
-        with st.form("fin"):
-            c1, c2 = st.columns(2)
-            tipo = c1.selectbox("Tipo", ["Despesa", "Receita"])
-            desc = c2.text_input("Descrição")
-            val = c1.number_input("Valor", min_value=0.0)
-            dt = c2.date_input("Data", value=data_hoje_br(), format="DD/MM/YYYY")
-            cat = c1.selectbox("Categoria", ["Atendimento", "Produtos", "Aluguel", "Outros"])
-            pag = c2.selectbox("Pagamento", ["Pix", "Cartão", "Dinheiro"])
-            if st.form_submit_button("Lançar"):
-                add_data("financeiro",
-                         {"descricao": desc, "valor": val, "tipo": tipo, "categoria": cat, "data_movimento": str(dt),
-                          "forma_pagamento": pag})
-                st.success("Lançado!");
-                time.sleep(1);
-                st.rerun()
-
+        with st.form("ff"):
+            tipo = st.selectbox("Tipo", ["Receita", "Despesa"])
+            desc = st.text_input("Descrição")
+            val = st.number_input("Valor")
+            dt = st.date_input("Data", value=data_hoje_br(), format="DD/MM/YYYY")
+            cat = st.selectbox("Categoria", ["Atendimento", "Produto", "Custo Fixo", "Outros"])
+            if st.form_submit_button("Lançar"): add_data("financeiro", {"descricao": desc, "valor": val, "tipo": tipo,
+                                                                        "categoria": cat, "data_movimento": str(dt),
+                                                                        "forma_pagamento": "Dinheiro"}); st.success(
+                "Ok!"); st.rerun()
     with t2:
         df = get_data("financeiro")
         if not df.empty:
             mes = st.slider("Mês", 1, 12, data_hoje_br().month)
-            df['dt'] = pd.to_datetime(df['data_movimento'])
-            df_filtro = df[df['dt'].dt.month == mes]
-
-
-            def color_row(val):
-                return f'background-color: {"#d4edda" if val == "Receita" else "#f8d7da"}'
-
-
-            st.dataframe(
-                df_filtro[['id', 'data_movimento', 'tipo', 'descricao', 'valor']].style.map(color_row, subset=['tipo']),
-                use_container_width=True)
-
-            c1, c2 = st.columns(2)
-            c1.download_button("📥 Excel", to_excel(df_filtro), "financeiro.xlsx")
-
+            df['d'] = pd.to_datetime(df['data_movimento'])
+            res = df[df['d'].dt.month == mes]
+            st.dataframe(res[['id', 'data_movimento', 'tipo', 'descricao', 'valor']], use_container_width=True)
+            st.download_button("📥 Excel", to_excel(res), "fin.xlsx")
             st.divider()
-            c_del1, c_del2 = st.columns([3, 1])
-            with c_del1:
-                item_fin = st.selectbox("Excluir item:", df_filtro.apply(
-                    lambda x: f"ID {x['id']}: {x['tipo']} - R$ {x['valor']} ({x['descricao']})", axis=1))
-            with c_del2:
-                st.write("");
-                st.write("")
-                if st.button("🗑️ Apagar"):
-                    id_real = int(item_fin.split(":")[0].replace("ID ", ""))
-                    delete_data("financeiro", id_real);
-                    st.rerun()
+            idel = st.number_input("ID para excluir:", min_value=0)
+            if st.button("🗑️ Excluir Item"): delete_data("financeiro", int(idel)); st.rerun()
 
 # ==============================================================================
 # 6. RELATÓRIOS
 # ==============================================================================
 elif menu == "📑 Relatórios":
-    st.title("Relatórios Gerais")
-    tipo = st.selectbox("Tipo", ["Faturamento", "Atendimentos"])
+    st.title("Relatórios")
     d1 = st.date_input("Início", value=data_hoje_br().replace(day=1), format="DD/MM/YYYY")
     d2 = st.date_input("Fim", value=data_hoje_br(), format="DD/MM/YYYY")
+    if st.button("Gerar Faturamento"):
+        df = get_data("financeiro")
+        if not df.empty:
+            res = df[(df['data_movimento'] >= str(d1)) & (df['data_movimento'] <= str(d2))]
+            st.dataframe(res)
+            st.download_button("📥 Baixar Excel", to_excel(res), "faturamento.xlsx")
 
-    if st.button("Gerar Tabela"):
-        if tipo == "Faturamento":
-            df = get_data("financeiro")
-            if not df.empty:
-                res = df[(df['data_movimento'] >= str(d1)) & (df['data_movimento'] <= str(d2))]
-                st.dataframe(res)
-                st.download_button("📥 Excel", to_excel(res), "fat.xlsx")
-        elif tipo == "Atendimentos":
-            df = get_data("agenda")
-            if not df.empty:
-                res = df[(df['data_agendamento'] >= str(d1)) & (df['data_agendamento'] <= str(d2))]
-                st.dataframe(res)
-                st.download_button("📥 Excel", to_excel(res), "atendimentos.xlsx")
+# ==============================================================================
+# 7. INSIGHTS (ANIVERSARIANTES + WHATSAPP) 🎂
+# ==============================================================================
+elif menu == "🎂 Insights (Aniversários)":
+    st.title("🎂 Aniversariantes do Mês")
+    st.markdown("Aqui você vê quem faz aniversário este mês e já pode mandar um 'Parabéns' no WhatsApp!")
+
+    df = get_data("clientes")
+    if not df.empty:
+        # Filtra aniversariantes do mês atual
+        mes_atual = data_hoje_br().month
+        df['dt_obj'] = pd.to_datetime(df['data_nascimento'], errors='coerce')
+        aniversariantes = df[df['dt_obj'].dt.month == mes_atual].sort_values(by="dt_obj")
+
+        if not aniversariantes.empty:
+            st.balloons()  # Efeito de festa
+            st.success(f"Temos {len(aniversariantes)} aniversariantes em {datetime.now().strftime('%B')}! 🎉")
+
+            # Mostra lista com botão de WhatsApp
+            for index, row in aniversariantes.iterrows():
+                with st.container(border=True):
+                    c1, c2, c3 = st.columns([2, 2, 1])
+                    dia = row['dt_obj'].day
+                    nome = row['nome']
+                    telefone = row['telefone']
+
+                    c1.markdown(f"**Dia {dia}:** {nome}")
+                    c2.markdown(f"📞 {telefone}")
+
+                    # Botão Mágico do WhatsApp
+                    if telefone:
+                        num_limpo = limpar_telefone(telefone)
+                        link_zap = f"https://wa.me/55{num_limpo}?text=Olá {nome}! Parabéns pelo seu dia! 🎉 Muita saúde e beleza para você!"
+                        c3.link_button("🎁 Enviar Zap", link_zap)
+                    else:
+                        c3.write("Sem nº")
+        else:
+            st.info("Nenhum cliente faz aniversário neste mês. Aproveite para captar novos clientes! 😉")
+    else:
+        st.warning("Cadastre clientes para ver os aniversariantes.")
