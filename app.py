@@ -79,25 +79,22 @@ def delete_data(table, id_):
         return False
 
 
-# --- GERADOR DE PDF INDIVIDUAL (FICHA COMPLETA) ---
+# --- GERADOR DE PDF INDIVIDUAL (SEM FOTO) ---
 def gerar_ficha_individual(dados_cliente):
     pdf = FPDF()
     pdf.add_page()
 
-    # 1. Logo (Tenta achar a foto)
-    if os.path.exists("Barbara.jpeg"):
-        pdf.image("Barbara.jpeg", x=10, y=8, w=30)
-    elif os.path.exists("barbara.jpeg"):
-        pdf.image("barbara.jpeg", x=10, y=8, w=30)
+    # 1. Cabeçalho (Apenas Texto Profissional)
+    pdf.set_y(15)  # Margem superior
+    pdf.set_font("Arial", 'B', 18)
+    pdf.cell(0, 10, "Bárbara Castro Estética Avançada", ln=True, align='C')
 
-    # 2. Cabeçalho
-    pdf.set_font("Arial", 'B', 16)
-    pdf.cell(0, 10, "Ficha de Anamnese - Estética Avançada", ln=True, align='C')
-    pdf.set_font("Arial", 'I', 10)
-    pdf.cell(0, 10, "Bárbara Castro", ln=True, align='C')
-    pdf.ln(20)  # Espaço
+    pdf.set_font("Arial", 'I', 12)
+    pdf.cell(0, 10, "Ficha de Anamnese e Histórico do Cliente", ln=True, align='C')
 
-    # 3. Dados do Cliente
+    pdf.ln(15)  # Espaço maior após o título
+
+    # 2. Dados do Cliente
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 10, "DADOS DO CLIENTE:", ln=True)
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())  # Linha horizontal
@@ -119,15 +116,16 @@ def gerar_ficha_individual(dados_cliente):
 
     pdf.ln(10)
 
-    # 4. Anamnese
+    # 3. Anamnese
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 10, "HISTÓRICO / ANAMNESE:", ln=True)
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.ln(5)
     pdf.set_font("Arial", size=11)
+    # Multi_cell para texto longo quebrar linha
     pdf.multi_cell(0, 8, txt=str(dados_cliente.get('anamnese', 'Nenhuma observação registrada.')))
 
-    # 5. Assinatura no Rodapé
+    # 4. Assinatura no Rodapé
     pdf.ln(40)  # Espaço grande para descer
     pdf.set_font("Arial", size=10)
     pdf.cell(0, 5, "________________________________________________________", ln=True, align='C')
