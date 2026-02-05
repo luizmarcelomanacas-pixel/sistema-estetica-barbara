@@ -96,45 +96,57 @@ def calcular_churn(df_agenda, df_clientes):
 
     # 1. Prepara os dados
     df = df_agenda.copy()
-    df['dt'] = pd.to_datetime(df['data_agendamento'])
+
+    # Garante que temos a coluna data_agendamento
+    if 'data_agendamento' not in df.columns: return pd.DataFrame()
+
+    df['dt'] = pd.to_datetime(df['data_agendamento'], errors='coerce')
+    df = df.dropna(subset=['dt'])  # Remove datas inválidas
     df = df[df['status'] == 'Concluído'].sort_values('dt')  # Só conta visitas reais
 
     risco_lista = []
     hoje = pd.to_datetime(data_hoje_br())
 
     # 2. Analisa cliente por cliente
-    for nome_cli in df['cliente_nome'].unique():
-        historico = df[df['cliente_nome'] == nome_cli]
+    if 'cliente_nome' in df.columns:
+        for nome_cli in df['cliente_nome'].unique():
+            historico = df[df['cliente_nome'] == nome_cli]
 
-        # Só analisa quem veio pelo menos 2 vezes (senão não tem média)
-        if len(historico) >= 2:
-            datas = historico['dt'].dt.date.tolist()
-            # Calcula a diferença média entre visitas (Ciclo da Cliente)
-            diferencas = [(datas[i] - datas[i - 1]).days for i in range(1, len(datas))]
-            media_frequencia = sum(diferencas) / len(diferencas)
+            # Só analisa quem veio pelo menos 2 vezes (senão não tem média)
+            if len(historico) >= 2:
+                datas = historico['dt'].dt.date.tolist()
+                # Calcula a diferença média entre visitas (Ciclo da Cliente)
+                diferencas = [(datas[i] - datas[i - 1]).days for i in range(1, len(datas))]
+                if diferencas:
+                    media_frequencia = sum(diferencas) / len(diferencas)
 
-            # Última visita
-            ultima_visita = historico['dt'].max()
-            dias_sem_vir = (hoje - ultima_visita).days
+                    # Última visita
+                    ultima_visita = historico['dt'].max()
+                    dias_sem_vir = (hoje - ultima_visita).days
 
-            # A REGRA DE OURO: Se sumiu por mais de 2x o ciclo normal dela = RISCO ALTO
-            # Se sumiu por mais de 1.5x o ciclo = RISCO MÉDIO
-            # (Adicionamos +15 dias de margem mínima para não alarmar à toa)
-            limite_alerta = max(media_frequencia * 1.5, 30)
+                    # A REGRA DE OURO
+                    limite_alerta = max(media_frequencia * 1.5, 30)
 
-            if dias_sem_vir > limite_alerta:
-                # Busca telefone
-                tel = df_clientes[df_clientes['nome'] == nome_cli]['telefone'].values
-                tel = tel[0] if len(tel) > 0 else ""
+                    if dias_sem_vir > limite_alerta:
+                        # Busca telefone
+                        tel = ""
+                        if not df_clientes.empty and 'nome' in df_clientes.columns:
+                            res = df_clientes[df_clientes['nome'] == nome_cli]
+                            if not res.empty:
+                                tel = res['telefone'].values[0]
 
-                risco_lista.append({
-                    "Cliente": nome_cli,
-                    "Última Visita": ultima_visita.strftime('%d/%m/%Y'),
-                    "Dias Sumida": dias_sem_vir,
-                    "Frequência Normal": f"A cada {int(media_frequencia)} dias",
-                    "Telefone": tel,
-                    "Risco": "ALTO" if dias_sem_vir > (media_frequencia * 2) else "Médio"
-                })
+                        risco_lista.append({
+                            "Cliente": nome_cli,
+                            "Última Visita": ultima_visita.strftime('%d/%m/%Y'),
+                            "Dias Sumida": dias_sem_vir,
+                            "Frequência Normal": f"A cada {int(media_frequencia)} dias",
+                            "Telefone": tel,
+                            "Risco": "ALTO" if dias_sem_vir > (media_frequencia * 2) else "Médio"
+                        })
+
+    # CORREÇÃO DO ERRO AQUI:
+    if not risco_lista:
+        return pd.DataFrame()  # Retorna vazio se ninguém estiver em risco
 
     return pd.DataFrame(risco_lista).sort_values('Dias Sumida', ascending=False)
 
