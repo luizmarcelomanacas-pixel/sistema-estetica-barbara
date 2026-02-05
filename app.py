@@ -62,7 +62,7 @@ if not st.session_state["logado"]:
 # Configurações de E-mail
 EMAIL_REMETENTE = 'luizmarcelomanacas@gmail.com'
 EMAIL_SENHA = 'njyt nrvd vtro jgwi'
-EMAIL_DESTINATARIO = 'luizmarcelomanacas@gmail.com'
+EMAIL_DESTINATARIO = 'castro.babi73@gmail.com'
 
 
 # Função Data Brasil (UTC-3)
