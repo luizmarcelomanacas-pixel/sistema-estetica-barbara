@@ -179,30 +179,53 @@ with st.sidebar:
 # --- PÁGINAS ---
 if menu == "📊 Dashboard":
     st.markdown("<div class='main-header'>Painel de Controle</div>", unsafe_allow_html=True)
-    df_ag = get_data("agenda");
+
+    df_ag = get_data("agenda")
     df_fin = get_data("financeiro")
     hj = str(data_hoje_br())
 
+    # --- CÁLCULO MENSAL (CORREÇÃO APLICADA AQUI) ---
+    data_atual = data_hoje_br()
+    mes_atual = data_atual.month
+    ano_atual = data_atual.year
+    nome_meses = {1: "Janeiro", 2: "Fevereiro", 3: "Março", 4: "Abril", 5: "Maio", 6: "Junho", 7: "Julho", 8: "Agosto",
+                  9: "Setembro", 10: "Outubro", 11: "Novembro", 12: "Dezembro"}
+
+    # 1. Agenda (Mantém contagem de HOJE)
     ag = len(df_ag[df_ag['data_agendamento'] == hj]) if not df_ag.empty else 0
-    rec = df_fin[df_fin['tipo'] == 'Receita']['valor'].sum() if not df_fin.empty else 0
-    des = df_fin[df_fin['tipo'] == 'Despesa']['valor'].sum() if not df_fin.empty else 0
+
+    # 2. Financeiro (Filtra pelo MÊS ATUAL)
+    rec = 0.0
+    des = 0.0
+    if not df_fin.empty:
+        df_fin['dt_obj'] = pd.to_datetime(df_fin['data_movimento'])
+        # Filtra Mês E Ano iguais ao atual
+        df_mes = df_fin[
+            (df_fin['dt_obj'].dt.month == mes_atual) &
+            (df_fin['dt_obj'].dt.year == ano_atual)
+            ]
+        rec = df_mes[df_mes['tipo'] == 'Receita']['valor'].sum()
+        des = df_mes[df_mes['tipo'] == 'Despesa']['valor'].sum()
+
+    lucro = rec - des
+
+    # Título Dinâmico
+    st.markdown(f"### 🗓️ Visão Mensal: {nome_meses[mes_atual]} / {ano_atual}")
 
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Agenda Hoje", ag);
-    c2.metric("Receita", f"R$ {rec:,.2f}")
-    c3.metric("Despesas", f"R$ {des:,.2f}");
-    c4.metric("Lucro", f"R$ {rec - des:,.2f}")
+    c1.metric("Agenda Hoje", ag)
+    c2.metric("Receita (Mês)", f"R$ {rec:,.2f}")
+    c3.metric("Despesas (Mês)", f"R$ {des:,.2f}")
+    c4.metric("Lucro (Mês)", f"R$ {lucro:,.2f}")
 
     st.markdown("---")
 
-    # --- LISTA DE DESPESAS DO DIA (HOJE) ---
+    # --- LISTA DE DESPESAS QUE VENCEM HOJE ---
     st.subheader("🛑 Contas a Pagar (HOJE)")
 
     if not df_fin.empty:
-        df_fin['dt_obj'] = pd.to_datetime(df_fin['data_movimento'])
         hoje_dt = pd.to_datetime(data_hoje_br())
-
-        # Filtra: Só Despesas E Data IGUAL a hoje
+        # Reutiliza df_fin original para buscar contas do dia (sem filtro de mês)
         mask = (df_fin['tipo'] == 'Despesa') & (df_fin['dt_obj'] == hoje_dt)
         df_vencendo = df_fin[mask].sort_values('dt_obj')
 
@@ -243,27 +266,16 @@ elif menu == "📅 Agenda":
                     {"title": f"{row['cliente_nome']} - {row['procedimento_nome']}", "start": start, "end": end,
                      "backgroundColor": cor, "borderColor": cor})
 
-            # --- CALENDÁRIO TRADUZIDO E REORDENADO ---
             calendar_options = {
-                "headerToolbar": {
-                    "left": "today prev,next",
-                    "center": "title",
-                    "right": "timeGridDay,timeGridWeek,dayGridMonth"  # Ordem: Dia, Semana, Mês
-                },
-                "buttonText": {
-                    "today": "Hoje",
-                    "month": "Mês",
-                    "week": "Semana",
-                    "day": "Dia",
-                    "list": "Lista"
-                },
+                "headerToolbar": {"left": "today prev,next", "center": "title",
+                                  "right": "timeGridDay,timeGridWeek,dayGridMonth"},
+                "buttonText": {"today": "Hoje", "month": "Mês", "week": "Semana", "day": "Dia", "list": "Lista"},
                 "initialView": "dayGridMonth",
                 "slotMinTime": "07:00:00",
                 "slotMaxTime": "21:00:00",
                 "locale": "pt-br",
                 "allDaySlot": False
             }
-
             calendar(events=events, options=calendar_options)
             st.caption("🔵 Agendado | 🟢 Concluído | 🔴 Cancelado")
         else:
