@@ -243,10 +243,28 @@ elif menu == "📅 Agenda":
                     {"title": f"{row['cliente_nome']} - {row['procedimento_nome']}", "start": start, "end": end,
                      "backgroundColor": cor, "borderColor": cor})
 
-            calendar(events=events, options={"headerToolbar": {"left": "today prev,next", "center": "title",
-                                                               "right": "dayGridMonth,timeGridWeek,timeGridDay"},
-                                             "initialView": "timeGridWeek", "slotMinTime": "07:00:00",
-                                             "slotMaxTime": "21:00:00", "locale": "pt-br", "allDaySlot": False})
+            # --- CALENDÁRIO TRADUZIDO E REORDENADO ---
+            calendar_options = {
+                "headerToolbar": {
+                    "left": "today prev,next",
+                    "center": "title",
+                    "right": "timeGridDay,timeGridWeek,dayGridMonth"  # Ordem: Dia, Semana, Mês
+                },
+                "buttonText": {
+                    "today": "Hoje",
+                    "month": "Mês",
+                    "week": "Semana",
+                    "day": "Dia",
+                    "list": "Lista"
+                },
+                "initialView": "dayGridMonth",
+                "slotMinTime": "07:00:00",
+                "slotMaxTime": "21:00:00",
+                "locale": "pt-br",
+                "allDaySlot": False
+            }
+
+            calendar(events=events, options=calendar_options)
             st.caption("🔵 Agendado | 🟢 Concluído | 🔴 Cancelado")
         else:
             st.info("Agenda vazia.")
