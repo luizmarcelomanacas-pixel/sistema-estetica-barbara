@@ -39,7 +39,6 @@ def check_login():
             password = st.text_input("Senha", type="password")
             if st.form_submit_button("Entrar", type="primary"):
                 try:
-                    # Verifica se as senhas batem
                     if user == st.secrets["admin"]["usuario"] and password == st.secrets["admin"]["senha"]:
                         st.session_state["logado"] = True
                         st.toast("Login realizado com sucesso!", icon="✅")
@@ -59,18 +58,15 @@ if not st.session_state["logado"]:
 # 2. CONEXÃO COM BANCO DE DADOS E CONFIGURAÇÕES
 # ==============================================================================
 
-# Configurações de E-mail
 EMAIL_REMETENTE = 'luizmarcelomanacas@gmail.com'
 EMAIL_SENHA = 'njyt nrvd vtro jgwi'
 EMAIL_DESTINATARIO = 'luizmarcelomanacas@gmail.com'
 
 
-# Função Data Brasil (UTC-3)
 def data_hoje_br():
     return (datetime.utcnow() - timedelta(hours=3)).date()
 
 
-# Conexão Supabase Segura
 @st.cache_resource
 def init_supabase():
     try:
@@ -86,11 +82,10 @@ supabase = init_supabase()
 
 
 # ==============================================================================
-# 3. FUNÇÕES CRUD (CRIAR, LER, ATUALIZAR, DELETAR)
+# 3. FUNÇÕES CRUD
 # ==============================================================================
 
 def get_data(table):
-    """Busca dados de forma segura, retornando DataFrame vazio se der erro"""
     if not supabase: return pd.DataFrame()
     try:
         response = supabase.table(table).select("*").order("id").execute()
@@ -100,7 +95,6 @@ def get_data(table):
 
 
 def add_data(table, data):
-    """Adiciona dados e retorna True/False"""
     if not supabase: return False
     try:
         supabase.table(table).insert(data).execute()
@@ -111,7 +105,6 @@ def add_data(table, data):
 
 
 def update_data(table, id_, data):
-    """Atualiza dados"""
     if not supabase: return False
     try:
         supabase.table(table).update(data).eq("id", id_).execute()
@@ -122,7 +115,6 @@ def update_data(table, id_, data):
 
 
 def delete_data(table, id_):
-    """Remove dados"""
     if not supabase: return False
     try:
         supabase.table(table).delete().eq("id", id_).execute()
@@ -267,7 +259,6 @@ def enviar_agenda_email():
         return f"❌ Erro ao enviar: {e}"
 
 
-# Gatilho Robô
 if "rotina" in st.query_params and st.query_params["rotina"] == "disparar_email":
     st.write(enviar_agenda_email())
     st.stop()
@@ -521,45 +512,53 @@ elif menu == "👥 Clientes":
                 time.sleep(1);
                 st.rerun()
 
-    # --- ABA: PRESCRIÇÃO (CORRIGIDA: LIMPEZA AUTOMÁTICA) ---
+    # --- ABA: PRESCRIÇÃO (CORRIGIDA COM CALLBACK) ---
     with tab3:
         st.subheader("Nova Prescrição / Home Care")
         df_clientes = get_data("clientes")
 
         if not df_clientes.empty:
-            cliente_presc = st.selectbox("Selecione o Paciente:", df_clientes['nome'].unique(), key="sb_presc")
+            # Seleção do cliente com chave para o callback
+            cliente_presc = st.selectbox("Selecione o Paciente:", df_clientes['nome'].unique(), key="sb_presc_key")
 
-            # 1. Inicializa o estado do texto se não existir
+            # Inicializa a chave de texto se não existir
             if "presc_texto" not in st.session_state:
                 st.session_state["presc_texto"] = ""
 
-            # 2. Campo de texto vinculado à chave "presc_texto"
+
+            # Função de Callback (Executa ao clicar, ANTES de recarregar)
+            def gerar_e_limpar():
+                # 1. Pega os valores atuais da sessão
+                texto_atual = st.session_state["presc_texto"]
+                cli_atual = st.session_state["sb_presc_key"]
+
+                if texto_atual:
+                    # 2. Gera o PDF e guarda na memória
+                    pdf = gerar_prescricao_pdf(cli_atual, texto_atual)
+                    st.session_state["ultimo_pdf"] = pdf
+                    st.session_state["ultimo_cliente_pdf"] = cli_atual
+
+                    # 3. Limpa o campo de texto (Seguro fazer aqui)
+                    st.session_state["presc_texto"] = ""
+                    st.session_state["sucesso_msg"] = True  # Bandeira de sucesso
+
+
+            # Campo de texto vinculado à chave
             texto_prescricao = st.text_area("Descreva os medicamentos, produtos e modo de uso:", height=300,
                                             key="presc_texto")
 
-            if st.button("Gerar Prescrição PDF"):
-                if texto_prescricao:
-                    # Gera PDF
-                    pdf_bytes = gerar_prescricao_pdf(cliente_presc, texto_prescricao)
+            # Botão com Callback
+            st.button("Gerar Prescrição PDF", on_click=gerar_e_limpar)
 
-                    # Salva no estado para o botão aparecer após o reload
-                    st.session_state["ultimo_pdf"] = pdf_bytes
-                    st.session_state["ultimo_cliente_pdf"] = cliente_presc
+            # Exibe mensagem de sucesso (se a bandeira estiver ativa)
+            if st.session_state.get("sucesso_msg"):
+                st.success(
+                    f"✅ Prescrição gerada para **{st.session_state.get('ultimo_cliente_pdf')}**! O campo foi limpo.")
+                st.session_state["sucesso_msg"] = False  # Reseta a bandeira
 
-                    # Limpa o texto
-                    st.session_state["presc_texto"] = ""
-
-                    # Força reload para limpar visualmente
-                    st.rerun()
-                else:
-                    st.warning("Escreva algo na prescrição.")
-
-            # 3. Área de Download (Persistente)
+            # Área de Download (Persistente)
             if "ultimo_pdf" in st.session_state:
                 st.divider()
-                st.success(
-                    f"✅ Prescrição gerada para **{st.session_state['ultimo_cliente_pdf']}**! O campo acima foi limpo.")
-
                 c_pdf, c_zap = st.columns(2)
 
                 # Botão Download
@@ -572,7 +571,6 @@ elif menu == "👥 Clientes":
 
                 # Botão WhatsApp
                 cli_pdf = st.session_state['ultimo_cliente_pdf']
-                # Busca telefone atualizado
                 info_cli = df_clientes[df_clientes['nome'] == cli_pdf]
                 if not info_cli.empty:
                     fone_cli = info_cli.iloc[0]['telefone']
@@ -581,6 +579,8 @@ elif menu == "👥 Clientes":
                         msg = f"Olá {cli_pdf}, segue sua prescrição em anexo."
                         link = f"https://wa.me/55{clean_fone}?text={msg}"
                         c_zap.link_button("💚 Enviar no WhatsApp", link)
+                    else:
+                        c_zap.warning("Cliente sem telefone.")
         else:
             st.warning("Cadastre clientes primeiro.")
 
