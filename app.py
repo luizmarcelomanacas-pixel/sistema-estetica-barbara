@@ -10,7 +10,7 @@ from email.mime.multipart import MIMEMultipart
 import plotly.express as px
 from fpdf import FPDF
 from supabase import create_client, Client
-from streamlit_calendar import calendar  # <--- BIBLIOTECA NOVA
+from streamlit_calendar import calendar
 
 # --- CONFIGURAÇÃO VISUAL ---
 st.set_page_config(page_title="Bárbara Castro Estética", layout="wide", page_icon="✨")
@@ -182,90 +182,83 @@ if menu == "📊 Dashboard":
     df_ag = get_data("agenda");
     df_fin = get_data("financeiro")
     hj = str(data_hoje_br())
+
     ag = len(df_ag[df_ag['data_agendamento'] == hj]) if not df_ag.empty else 0
     rec = df_fin[df_fin['tipo'] == 'Receita']['valor'].sum() if not df_fin.empty else 0
     des = df_fin[df_fin['tipo'] == 'Despesa']['valor'].sum() if not df_fin.empty else 0
+
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Agenda Hoje", ag);
     c2.metric("Receita", f"R$ {rec:,.2f}")
     c3.metric("Despesas", f"R$ {des:,.2f}");
     c4.metric("Lucro", f"R$ {rec - des:,.2f}")
-    if not df_fin.empty: st.plotly_chart(px.bar(df_fin, x='categoria', y='valor', color='tipo',
-                                                color_discrete_map={'Receita': '#00CC96', 'Despesa': '#EF553B'}),
-                                         use_container_width=True)
+
+    st.markdown("---")
+
+    # --- LISTA DE DESPESAS DO DIA (HOJE) ---
+    st.subheader("🛑 Contas a Pagar (HOJE)")
+
+    if not df_fin.empty:
+        df_fin['dt_obj'] = pd.to_datetime(df_fin['data_movimento'])
+        hoje_dt = pd.to_datetime(data_hoje_br())
+
+        # Filtra: Só Despesas E Data IGUAL a hoje
+        mask = (df_fin['tipo'] == 'Despesa') & (df_fin['dt_obj'] == hoje_dt)
+        df_vencendo = df_fin[mask].sort_values('dt_obj')
+
+        if not df_vencendo.empty:
+            for i, row in df_vencendo.iterrows():
+                d_fmt = row['dt_obj'].strftime('%d/%m/%Y')
+                st.error(f"📅 **{d_fmt}** — {row['descricao']} — **R$ {row['valor']:,.2f}**")
+        else:
+            st.success("Tudo pago! Nenhuma despesa vence hoje. ✅")
+    else:
+        st.info("Nenhum lançamento financeiro ainda.")
 
 elif menu == "📅 Agenda":
     st.title("Agenda")
-    # Agora com 3 abas, incluindo o Calendário Visual
     t_cal, t_lista, t_novo = st.tabs(["📅 Calendário Visual", "📝 Lista & Edição", "➕ Novo Agendamento"])
 
     df_cli = get_data("clientes")
     df_proc = get_data("procedimentos")
     df_ag = get_data("agenda")
 
-    # --- ABA 1: CALENDÁRIO VISUAL (NOVIDADE) ---
     with t_cal:
         if not df_ag.empty:
             events = []
             for i, row in df_ag.iterrows():
-                # Define cor baseada no status
-                cor = "#3788d8"  # Azul (Padrão/Agendado)
+                cor = "#3788d8"
                 if row['status'] == "Concluído":
-                    cor = "#28a745"  # Verde
+                    cor = "#28a745"
                 elif row['status'] == "Cancelado":
-                    cor = "#dc3545"  # Vermelho
-
-                # Monta data e hora ISO
+                    cor = "#dc3545"
                 start = f"{row['data_agendamento']}T{row['hora_agendamento']}"
-
-                # Calcula fim (padrão 1h depois para visualização)
                 try:
-                    hora_partes = str(row['hora_agendamento']).split(':')
-                    h = int(hora_partes[0])
-                    m = hora_partes[1]
+                    h, m, s = map(int, str(row['hora_agendamento']).split(':'))
                     end_h = h + 1
-                    end = f"{row['data_agendamento']}T{end_h:02d}:{m}:00"
+                    end = f"{row['data_agendamento']}T{end_h:02d}:{m:02d}:00"
                 except:
-                    end = start  # Se der erro, fim = inicio
+                    end = start
+                events.append(
+                    {"title": f"{row['cliente_nome']} - {row['procedimento_nome']}", "start": start, "end": end,
+                     "backgroundColor": cor, "borderColor": cor})
 
-                events.append({
-                    "title": f"{row['cliente_nome']} - {row['procedimento_nome']}",
-                    "start": start,
-                    "end": end,
-                    "backgroundColor": cor,
-                    "borderColor": cor,
-                })
-
-            calendar_options = {
-                "headerToolbar": {
-                    "left": "today prev,next",
-                    "center": "title",
-                    "right": "dayGridMonth,timeGridWeek,timeGridDay"
-                },
-                "initialView": "timeGridWeek",
-                "slotMinTime": "07:00:00",
-                "slotMaxTime": "21:00:00",
-                "locale": "pt-br",
-                "allDaySlot": False,
-            }
-
-            calendar(events=events, options=calendar_options)
+            calendar(events=events, options={"headerToolbar": {"left": "today prev,next", "center": "title",
+                                                               "right": "dayGridMonth,timeGridWeek,timeGridDay"},
+                                             "initialView": "timeGridWeek", "slotMinTime": "07:00:00",
+                                             "slotMaxTime": "21:00:00", "locale": "pt-br", "allDaySlot": False})
             st.caption("🔵 Agendado | 🟢 Concluído | 🔴 Cancelado")
         else:
-            st.info("Agenda vazia. Adicione agendamentos na aba 'Novo'.")
+            st.info("Agenda vazia.")
 
-    # --- ABA 2: LISTA E EDIÇÃO (ANTIGA) ---
     with t_lista:
         if not df_ag.empty:
             st.info("Mude para **Concluído** e salve para lançar no Caixa.")
-            edited = st.data_editor(
-                df_ag[['id', 'data_agendamento', 'hora_agendamento', 'cliente_nome', 'procedimento_nome', 'status',
-                       'valor_cobrado']],
-                column_config={
-                    "status": st.column_config.SelectboxColumn("Status", options=["Agendado", "Concluído", "Cancelado"],
-                                                               required=True)},
-                hide_index=True, use_container_width=True, key="ag_ed"
-            )
+            edited = st.data_editor(df_ag[['id', 'data_agendamento', 'hora_agendamento', 'cliente_nome',
+                                           'procedimento_nome', 'status', 'valor_cobrado']], column_config={
+                "status": st.column_config.SelectboxColumn("Status", options=["Agendado", "Concluído", "Cancelado"],
+                                                           required=True)}, hide_index=True, use_container_width=True,
+                                    key="ag_ed")
             if st.button("💾 Salvar Alterações"):
                 for i, row in edited.iterrows():
                     orig = df_ag[df_ag['id'] == row['id']].iloc[0]
@@ -289,7 +282,6 @@ elif menu == "📅 Agenda":
         else:
             st.info("Nenhum agendamento.")
 
-    # --- ABA 3: NOVO AGENDAMENTO ---
     with t_novo:
         if df_cli.empty or df_proc.empty:
             st.warning("Cadastre clientes e procedimentos antes.")
