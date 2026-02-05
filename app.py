@@ -53,7 +53,7 @@ def check_login():
 
 if not st.session_state["logado"]:
     check_login()
-    st.stop()  # Para a execução aqui se não estiver logado
+    st.stop()
 
 # ==============================================================================
 # 2. CONEXÃO COM BANCO DE DADOS E CONFIGURAÇÕES
@@ -144,7 +144,6 @@ def limpar_telefone(telefone):
 def gerar_ficha_individual(dados_cliente):
     pdf = FPDF()
     pdf.add_page()
-    # Cabeçalho
     pdf.set_y(15)
     pdf.set_font("Arial", 'B', 18)
     pdf.cell(0, 10, "Bárbara Castro Saúde & Estética Integrativa".encode('latin-1', 'replace').decode('latin-1'),
@@ -152,7 +151,6 @@ def gerar_ficha_individual(dados_cliente):
     pdf.set_font("Arial", 'I', 12)
     pdf.cell(0, 10, "Ficha de Anamnese".encode('latin-1', 'replace').decode('latin-1'), ln=True, align='C')
     pdf.ln(15)
-    # Dados
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 10, "DADOS DO CLIENTE:", ln=True)
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
@@ -171,7 +169,6 @@ def gerar_ficha_individual(dados_cliente):
         except:
             pass
     pdf.ln(10)
-    # Histórico
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 10, "HISTÓRICO / ANAMNESE:", ln=True)
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
@@ -180,7 +177,6 @@ def gerar_ficha_individual(dados_cliente):
     texto_anamnese = str(dados_cliente.get('anamnese', 'Nenhuma observação.')).encode('latin-1', 'replace').decode(
         'latin-1')
     pdf.multi_cell(0, 8, txt=texto_anamnese)
-    # Assinatura
     pdf.ln(40)
     pdf.set_font("Arial", size=10)
     pdf.cell(0, 5, "________________________________________________________", ln=True, align='C')
@@ -189,59 +185,43 @@ def gerar_ficha_individual(dados_cliente):
     return pdf.output(dest='S').encode('latin-1')
 
 
-# --- FUNÇÃO DE PRESCRIÇÃO (CORRIGIDA: ALINHAMENTO E PÁGINA) ---
 def gerar_prescricao_pdf(nome_cliente, texto_prescricao):
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
 
-    # --- CABEÇALHO ---
+    # Cabeçalho
     pdf.set_y(15)
     pdf.set_font("Arial", 'B', 16)
-    # Título centralizado
     pdf.cell(0, 10, "Bárbara Castro".encode('latin-1', 'replace').decode('latin-1'), ln=True, align='C')
     pdf.set_font("Arial", 'I', 12)
     pdf.cell(0, 8, "Saúde & Estética Integrativa".encode('latin-1', 'replace').decode('latin-1'), ln=True, align='C')
-
-    # Linha divisória elegante
     pdf.ln(5)
-    pdf.set_draw_color(180, 180, 180)  # Cinza
+    pdf.set_draw_color(180, 180, 180)
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.ln(10)
 
-    # --- DADOS DO PACIENTE ---
+    # Dados
     pdf.set_font("Arial", 'B', 12)
     pdf.set_text_color(0, 0, 0)
     pdf.cell(0, 8, f"Paciente: {nome_cliente}".encode('latin-1', 'replace').decode('latin-1'), ln=True)
     pdf.ln(5)
 
-    # --- CORPO DA PRESCRIÇÃO ---
+    # Texto
     pdf.set_font("Arial", size=12)
     texto_safe = texto_prescricao.encode('latin-1', 'replace').decode('latin-1')
     pdf.multi_cell(0, 8, txt=texto_safe)
 
-    # --- RODAPÉ INTELIGENTE ---
-    # Verifica se estamos muito perto do fim da página (> 220mm). Se sim, cria nova página.
-    if pdf.get_y() > 220:
-        pdf.add_page()
-
-    # Fixa o rodapé na parte inferior da página atual
+    # Rodapé Inteligente
+    if pdf.get_y() > 220: pdf.add_page()
     pdf.set_y(-60)
-
-    # Data e Local
     data_hj = date.today().strftime('%d/%m/%Y')
     pdf.set_font("Arial", 'I', 11)
     pdf.cell(0, 8, f"Rio de Janeiro, {data_hj}", ln=True, align='C')
     pdf.ln(10)
-
-    # Linha de Assinatura
     pdf.cell(0, 5, "________________________________________________________", ln=True, align='C')
-
-    # Nome Profissional
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 8, "Bárbara Castro", ln=True, align='C')
-
-    # Subtítulo Profissional
     pdf.set_font("Arial", size=10)
     pdf.cell(0, 5, "Saúde & Estética Integrativa".encode('latin-1', 'replace').decode('latin-1'), ln=True, align='C')
 
@@ -287,13 +267,13 @@ def enviar_agenda_email():
         return f"❌ Erro ao enviar: {e}"
 
 
-# Gatilho Robô (para automação futura)
+# Gatilho Robô
 if "rotina" in st.query_params and st.query_params["rotina"] == "disparar_email":
     st.write(enviar_agenda_email())
     st.stop()
 
 # ==============================================================================
-# 5. INTERFACE DO USUÁRIO (SIDEBAR E MENUS)
+# 5. INTERFACE DO USUÁRIO
 # ==============================================================================
 
 with st.sidebar:
@@ -541,36 +521,66 @@ elif menu == "👥 Clientes":
                 time.sleep(1);
                 st.rerun()
 
-    # --- ABA: PRESCRIÇÃO (CORRIGIDA) ---
+    # --- ABA: PRESCRIÇÃO (CORRIGIDA: LIMPEZA AUTOMÁTICA) ---
     with tab3:
         st.subheader("Nova Prescrição / Home Care")
         df_clientes = get_data("clientes")
 
         if not df_clientes.empty:
             cliente_presc = st.selectbox("Selecione o Paciente:", df_clientes['nome'].unique(), key="sb_presc")
-            dados_cli = df_clientes[df_clientes['nome'] == cliente_presc].iloc[0]
-            telefone_cli = dados_cli['telefone']
 
+            # 1. Inicializa o estado do texto se não existir
+            if "presc_texto" not in st.session_state:
+                st.session_state["presc_texto"] = ""
+
+            # 2. Campo de texto vinculado à chave "presc_texto"
             texto_prescricao = st.text_area("Descreva os medicamentos, produtos e modo de uso:", height=300,
-                                            placeholder="Ex: \n1. Sabonete Facial - Usar 2x ao dia.")
+                                            key="presc_texto")
 
             if st.button("Gerar Prescrição PDF"):
                 if texto_prescricao:
+                    # Gera PDF
                     pdf_bytes = gerar_prescricao_pdf(cliente_presc, texto_prescricao)
-                    st.success("Prescrição Gerada!")
-                    col_pdf, col_zap = st.columns(2)
-                    col_pdf.download_button("📥 Baixar PDF e Imprimir", data=pdf_bytes,
-                                            file_name=f"Prescricao_{cliente_presc}.pdf", mime="application/pdf")
 
-                    if telefone_cli:
-                        phone_clean = limpar_telefone(telefone_cli)
-                        msg = f"Olá {cliente_presc}, segue sua prescrição em anexo."
-                        link_zap = f"https://wa.me/55{phone_clean}?text={msg}"
-                        col_zap.link_button("💚 Abrir WhatsApp do Cliente", link_zap)
-                    else:
-                        col_zap.warning("Cliente sem telefone.")
+                    # Salva no estado para o botão aparecer após o reload
+                    st.session_state["ultimo_pdf"] = pdf_bytes
+                    st.session_state["ultimo_cliente_pdf"] = cliente_presc
+
+                    # Limpa o texto
+                    st.session_state["presc_texto"] = ""
+
+                    # Força reload para limpar visualmente
+                    st.rerun()
                 else:
                     st.warning("Escreva algo na prescrição.")
+
+            # 3. Área de Download (Persistente)
+            if "ultimo_pdf" in st.session_state:
+                st.divider()
+                st.success(
+                    f"✅ Prescrição gerada para **{st.session_state['ultimo_cliente_pdf']}**! O campo acima foi limpo.")
+
+                c_pdf, c_zap = st.columns(2)
+
+                # Botão Download
+                c_pdf.download_button(
+                    label="📥 Baixar PDF Gerado",
+                    data=st.session_state["ultimo_pdf"],
+                    file_name=f"Prescricao_{st.session_state['ultimo_cliente_pdf']}.pdf",
+                    mime="application/pdf"
+                )
+
+                # Botão WhatsApp
+                cli_pdf = st.session_state['ultimo_cliente_pdf']
+                # Busca telefone atualizado
+                info_cli = df_clientes[df_clientes['nome'] == cli_pdf]
+                if not info_cli.empty:
+                    fone_cli = info_cli.iloc[0]['telefone']
+                    if fone_cli:
+                        clean_fone = limpar_telefone(fone_cli)
+                        msg = f"Olá {cli_pdf}, segue sua prescrição em anexo."
+                        link = f"https://wa.me/55{clean_fone}?text={msg}"
+                        c_zap.link_button("💚 Enviar no WhatsApp", link)
         else:
             st.warning("Cadastre clientes primeiro.")
 
