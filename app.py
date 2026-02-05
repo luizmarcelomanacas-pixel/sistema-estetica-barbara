@@ -7,7 +7,6 @@ import os
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-import plotly.express as px
 from fpdf import FPDF
 from supabase import create_client, Client
 from streamlit_calendar import calendar
@@ -97,7 +96,6 @@ def get_data(table):
         response = supabase.table(table).select("*").order("id").execute()
         return pd.DataFrame(response.data)
     except Exception as e:
-        # st.error(f"Erro ao ler {table}: {e}") # Descomente para debugar
         return pd.DataFrame()
 
 
@@ -268,7 +266,18 @@ with st.sidebar:
     menu = st.radio("MENU", ["📊 Dashboard", "📅 Agenda", "👥 Clientes", "💉 Procedimentos", "💰 Financeiro", "📑 Relatórios",
                              "🎂 Insights"])
     st.markdown("---")
+
+    # --- BOTÕES DE AÇÃO ---
     if st.button("🔄 Atualizar"): st.rerun()
+
+    # BOTÃO CORRIGIDO E RESTAURADO AQUI:
+    if st.button("📧 Enviar Agenda Email"):
+        with st.spinner("Enviando..."):
+            retorno = enviar_agenda_email()
+            if "Erro" in retorno:
+                st.error(retorno)
+            else:
+                st.success(retorno)
 
 # --- PÁGINA: DASHBOARD ---
 if menu == "📊 Dashboard":
