@@ -1,6 +1,7 @@
 streamlit
 pandas
-supabase
-xlsxwriter
-fpdf
 plotly
+fpdf
+xlsxwriter
+supabase
+streamlit-calendar
