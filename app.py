@@ -62,7 +62,7 @@ if not st.session_state["logado"]:
 # Configurações de E-mail
 EMAIL_REMETENTE = 'luizmarcelomanacas@gmail.com'
 EMAIL_SENHA = 'njyt nrvd vtro jgwi'
-EMAIL_DESTINATARIO = 'castro.babi73@gmail.com'
+EMAIL_DESTINATARIO = 'luizmarcelomanacas@gmail.com'
 
 
 # Função Data Brasil (UTC-3)
@@ -255,7 +255,8 @@ with st.sidebar:
     else:
         st.image("https://cdn-icons-png.flaticon.com/512/3135/3135715.png", width=150)
 
-    st.markdown("### Bárbara Castro")
+    # --- NOME ATUALIZADO ---
+    st.markdown("### Barbara Castro Saúde & Estética integrativa")
 
     # Botão de Sair
     if st.button("🚪 Sair", type="secondary"):
@@ -270,7 +271,6 @@ with st.sidebar:
     # --- BOTÕES DE AÇÃO ---
     if st.button("🔄 Atualizar"): st.rerun()
 
-    # BOTÃO CORRIGIDO E RESTAURADO AQUI:
     if st.button("📧 Enviar Agenda Email"):
         with st.spinner("Enviando..."):
             retorno = enviar_agenda_email()
