@@ -265,10 +265,15 @@ with st.sidebar:
                              "🎂 Insights"])
     st.markdown("---")
     if st.button("🔄 Atualizar"): st.rerun()
+
+    # CORREÇÃO DO ERRO DE SINTAXE (LINHA 271 NO PRINT)
     if st.button("📧 Enviar Agenda Email"):
         with st.spinner("Enviando..."):
             retorno = enviar_agenda_email()
-            if "Erro" in retorno: st.error(retorno); else: st.success(retorno)
+            if "Erro" in retorno:
+                st.error(retorno)
+            else:
+                st.success(retorno)
 
 # --- PÁGINA: DASHBOARD ---
 if menu == "📊 Dashboard":
@@ -342,10 +347,10 @@ elif menu == "📅 Agenda":
                 events.append(
                     {"title": f"{row['cliente_nome']} - {row['procedimento_nome']}", "start": start, "end": end,
                      "backgroundColor": cor, "borderColor": cor})
-            # CORREÇÃO AGENDA: VOLTEI PARA INGLÊS (LOCALE PADRÃO) E SEM BUTTONTEXT CUSTOMIZADO
+            # CORREÇÃO AGENDA: REMOVIDO "locale" PARA VOLTAR AO INGLÊS PADRÃO (TODAY/MONTH)
             calendar(events=events, options={"headerToolbar": {"left": "today prev,next", "center": "title",
                                                                "right": "timeGridDay,timeGridWeek,dayGridMonth"},
-                                             "initialView": "dayGridMonth", "locale": "en"}, key=f"cal_{len(events)}")
+                                             "initialView": "dayGridMonth"}, key=f"cal_{len(events)}")
         else:
             st.info("Agenda vazia.")
 
@@ -463,14 +468,18 @@ elif menu == "👥 Clientes":
                 nn = st.text_input("Nome", d['nome']);
                 nt = st.text_input("Zap", d['telefone']);
                 ne = st.text_input("Email", d['email'])
-                # CORREÇÃO CLIENTE: DATA DE NASCIMENTO VOLTOU AQUI
-                try:
-                    d_nasc = datetime.strptime(d['data_nascimento'], '%Y-%m-%d').date()
-                except:
-                    d_nasc = date.today()
-                ndt = st.date_input("Nascimento", d_nasc)
 
+                # CORREÇÃO CLIENTES: DATA DE NASCIMENTO VOLTOU AQUI
+                data_nasc_valor = date(1980, 1, 1)
+                if d['data_nascimento']:
+                    try:
+                        data_nasc_valor = datetime.strptime(d['data_nascimento'], '%Y-%m-%d').date()
+                    except:
+                        pass
+
+                ndt = st.date_input("Nascimento", data_nasc_valor)
                 na = st.text_area("Anamnese", d['anamnese'])
+
                 if st.form_submit_button("Atualizar"):
                     update_data("clientes", int(d['id']),
                                 {"nome": nn, "telefone": nt, "email": ne, "data_nascimento": str(ndt), "anamnese": na})
@@ -561,12 +570,14 @@ elif menu == "💰 Financeiro":
             df['dt_obj'] = pd.to_datetime(df['data_movimento'], errors='coerce')
             df_view = df[df['dt_obj'].dt.month == mes].sort_values('dt_obj', ascending=False)
 
-            # CORREÇÃO DO ERRO FINANCEIRO (StreamlitAPIException):
-            # Garante que a coluna 'valor' seja float antes de entrar no editor
+            # CORREÇÃO CRÍTICA DO ERRO FINANCEIRO (StreamlitAPIException):
+            # 1. Garante que VALOR é float puro (converte texto se precisar)
             df_view['valor'] = pd.to_numeric(df_view['valor'], errors='coerce').fillna(0.0)
 
-            # Garante que 'status' seja string/categórico
+            # 2. Garante que STATUS é string (converte Nones para 'Pendente')
             df_view['status'] = df_view['status'].astype(str)
+            mask_nan = df_view['status'].isin(['nan', 'None', '<NA>'])
+            df_view.loc[mask_nan, 'status'] = 'Pendente'
 
             col_cfg = {
                 "id": st.column_config.NumberColumn(disabled=True, width="small"),
@@ -577,6 +588,8 @@ elif menu == "💰 Financeiro":
                 "data_movimento": st.column_config.DateColumn("Data", format="DD/MM/YYYY")
             }
             cols_show = ['id', 'data_movimento', 'tipo', 'descricao', 'valor', 'status', 'categoria']
+
+            # Agora os dados estão limpinhos para o editor não travar
             edited = st.data_editor(df_view[cols_show], column_config=col_cfg, hide_index=True,
                                     use_container_width=True, key="fin_ed")
 
