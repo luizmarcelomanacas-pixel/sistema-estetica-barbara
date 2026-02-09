@@ -13,15 +13,98 @@ from supabase import create_client, Client
 from streamlit_calendar import calendar
 
 # ==============================================================================
-# 1. CONFIGURAÇÕES INICIAIS E SEGURANÇA
+# 1. CONFIGURAÇÕES INICIAIS E VISUAL (GOLD & NUDE)
 # ==============================================================================
 st.set_page_config(page_title="Bárbara Castro Estética", layout="wide", page_icon="✨")
 
+# --- CSS PERSONALIZADO: TEMA ELEGANCE (GOLD & NUDE) ---
 st.markdown("""
     <style>
-    .main-header {font-size: 2.5rem; color: #D4AF37; text-align: center; font-weight: bold;}
-    .metric-box {border: 1px solid #e6e6e6; padding: 20px; border-radius: 10px; background-color: #f9f9f9;}
-    div[data-testid="stMetricValue"] {color: #D4AF37;}
+    /* 1. FUNDO GERAL (Tom Creme Suave/Nude) */
+    .stApp {
+        background-color: #fdfbf7;
+        background-image: linear-gradient(to bottom, #fdfbf7, #fffcf5);
+    }
+
+    /* 2. BARRA LATERAL (Branca e Limpa) */
+    [data-testid="stSidebar"] {
+        background-color: #ffffff;
+        border-right: 1px solid #f0f0f0;
+        box-shadow: 2px 0 5px rgba(0,0,0,0.02);
+    }
+
+    /* 3. TÍTULOS E TEXTOS (Dourado Elegante) */
+    h1, h2, h3 {
+        color: #bfa15f !important; /* Dourado mais fechado */
+        font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+        font-weight: 300 !important; /* Fonte mais fina e chique */
+    }
+    .main-header {
+        font-size: 2.5rem; 
+        color: #bfa15f; 
+        text-align: center; 
+        font-weight: 300;
+        margin-bottom: 20px;
+        border-bottom: 1px solid #eee;
+        padding-bottom: 10px;
+    }
+
+    /* 4. CARDS DE MÉTRICAS (Com Sombra Suave e Efeito Hover) */
+    div[data-testid="metric-container"] {
+        background-color: #ffffff;
+        padding: 15px;
+        border-radius: 10px;
+        border: 1px solid #f0f0f0;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        transition: transform 0.2s, box-shadow 0.2s;
+    }
+    div[data-testid="metric-container"]:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 6px 12px rgba(191, 161, 95, 0.15);
+    }
+    div[data-testid="stMetricLabel"] {
+        color: #888; 
+        font-size: 0.9rem;
+    }
+    div[data-testid="stMetricValue"] {
+        color: #bfa15f !important; 
+        font-weight: 400;
+    }
+
+    /* 5. BOTÕES (Arredondados e Elegantes) */
+    .stButton>button {
+        border-radius: 20px;
+        border: 1px solid #bfa15f;
+        color: #bfa15f;
+        background-color: transparent;
+        transition: all 0.3s ease;
+        font-weight: 500;
+    }
+    .stButton>button:hover {
+        background-color: #bfa15f;
+        color: white;
+        border-color: #bfa15f;
+        box-shadow: 0 4px 10px rgba(191, 161, 95, 0.3);
+    }
+
+    /* Botão Primário (Ações principais) */
+    button[kind="primary"] {
+        background-color: #bfa15f !important;
+        border: none !important;
+        color: white !important;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+
+    /* 6. TABELAS E INPUTS */
+    div[data-testid="stDataFrame"] {
+        border: 1px solid #eee;
+        border-radius: 8px;
+        background-color: white;
+        padding: 5px;
+    }
+    .stDateInput input, .stTimeInput input, .stSelectbox div[data-baseweb="select"] {
+        border-radius: 8px;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -31,25 +114,26 @@ if "logado" not in st.session_state:
 
 
 def check_login():
-    st.markdown("<h1 style='text-align: center; color: #D4AF37;'>🔐 Acesso Restrito</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='text-align: center; color: #bfa15f;'>🔐 Acesso Restrito</h1>", unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        with st.form("login_form"):
-            user = st.text_input("Usuário")
-            password = st.text_input("Senha", type="password")
-            if st.form_submit_button("Entrar", type="primary"):
-                try:
-                    admin_user = st.secrets["admin"]["usuario"] if "admin" in st.secrets else "admin"
-                    admin_pass = st.secrets["admin"]["senha"] if "admin" in st.secrets else "1234"
-                    if user == admin_user and password == admin_pass:
-                        st.session_state["logado"] = True
-                        st.toast("Login realizado com sucesso!", icon="✅")
-                        time.sleep(0.5)
-                        st.rerun()
-                    else:
-                        st.error("Usuário ou senha incorretos.")
-                except Exception:
-                    st.error("Erro no login.")
+        with st.container(border=True):
+            with st.form("login_form"):
+                user = st.text_input("Usuário")
+                password = st.text_input("Senha", type="password")
+                if st.form_submit_button("Entrar", type="primary"):
+                    try:
+                        admin_user = st.secrets["admin"]["usuario"] if "admin" in st.secrets else "admin"
+                        admin_pass = st.secrets["admin"]["senha"] if "admin" in st.secrets else "1234"
+                        if user == admin_user and password == admin_pass:
+                            st.session_state["logado"] = True
+                            st.toast("Login realizado com sucesso!", icon="✅")
+                            time.sleep(0.5)
+                            st.rerun()
+                        else:
+                            st.error("Usuário ou senha incorretos.")
+                    except Exception:
+                        st.error("Erro no login.")
 
 
 if not st.session_state["logado"]:
@@ -258,12 +342,15 @@ with st.sidebar:
         st.image("barbara.jpeg", width=150)
     else:
         st.image("https://cdn-icons-png.flaticon.com/512/3135/3135715.png", width=150)
+
     st.markdown("### Barbara Castro Saúde & Estética integrativa")
+
     if st.button("🚪 Sair", type="secondary"): st.session_state["logado"] = False; st.rerun()
     st.markdown("---")
     menu = st.radio("MENU", ["📊 Dashboard", "📅 Agenda", "👥 Clientes", "💉 Procedimentos", "💰 Financeiro", "📑 Relatórios",
                              "🎂 Insights"])
     st.markdown("---")
+
     if st.button("🔄 Atualizar"): st.rerun()
     if st.button("📧 Enviar Agenda Email"):
         with st.spinner("Enviando..."):
@@ -385,7 +472,6 @@ elif menu == "📅 Agenda":
                 # Trata Hora (Converte String para Time Object)
                 try:
                     t_str = str(row.get('hora_agendamento', '00:00'))
-                    # Tenta formatar HH:MM:SS ou HH:MM
                     if len(t_str) > 5:
                         safe_time = datetime.strptime(t_str, '%H:%M:%S').time()
                     else:
@@ -395,8 +481,8 @@ elif menu == "📅 Agenda":
 
                 clean_rows.append({
                     "id": safe_id,
-                    "data_agendamento": safe_date,  # Objeto Data Real
-                    "hora_agendamento": safe_time,  # Objeto Hora Real
+                    "data_agendamento": safe_date,
+                    "hora_agendamento": safe_time,
                     "cliente_nome": str(row.get('cliente_nome', '')),
                     "procedimento_nome": str(row.get('procedimento_nome', '')),
                     "status": safe_status,
@@ -410,8 +496,7 @@ elif menu == "📅 Agenda":
                 "id": st.column_config.NumberColumn(disabled=True, width="small"),
                 "status": st.column_config.SelectboxColumn("Status", options=["Agendado", "Concluído", "Cancelado"],
                                                            required=True),
-                "data_agendamento": st.column_config.DateColumn("Data", format="DD/MM/YYYY"),
-                # Agora funciona porque é objeto date
+                "data_agendamento": st.column_config.DateColumn("Data", format="DD/MM/YYYY"),  # Formatado
                 "hora_agendamento": st.column_config.TimeColumn("Hora", format="HH:mm"),
                 "valor_cobrado": st.column_config.NumberColumn("Valor", format="R$ %.2f")
             }
@@ -422,11 +507,9 @@ elif menu == "📅 Agenda":
 
                 if st.button("💾 Salvar Alterações na Lista"):
                     for i, row in edited.iterrows():
-                        # Busca original usando ID
                         orig_row = df_ag[df_ag['id'] == row['id']]
                         if not orig_row.empty:
                             orig = orig_row.iloc[0]
-                            # Compara (convertendo para tipos compatíveis)
                             try:
                                 orig_val = float(orig.get('valor_cobrado', 0))
                             except:
@@ -440,7 +523,6 @@ elif menu == "📅 Agenda":
                                 update_data("agenda", int(row['id']),
                                             {"status": row['status'], "valor_cobrado": float(row['valor_cobrado'])})
 
-                                # Lógica de Lançar Receita
                                 if row['status'] == "Concluído" and str(orig.get('status')) != "Concluído":
                                     add_data("financeiro", {
                                         "descricao": f"Atendimento: {row['cliente_nome']}",
@@ -457,7 +539,6 @@ elif menu == "📅 Agenda":
                     time.sleep(1);
                     st.rerun()
 
-                # Botão Excluir Seguro
                 st.divider()
                 d_opts = df_clean_ag.apply(lambda x: f"ID {x['id']}: {x['cliente_nome']}", axis=1)
                 item = st.selectbox("Excluir Agendamento:", d_opts)
@@ -477,9 +558,7 @@ elif menu == "📅 Agenda":
                 c1, c2 = st.columns(2);
                 cli = c1.selectbox("Cliente", df_cli['nome'].unique());
                 proc = c2.selectbox("Proc", df_proc['nome'].unique())
-
                 d = c1.date_input("Data", data_hoje_br(), format="DD/MM/YYYY")
-
                 h = c2.time_input("Hora");
                 obs = st.text_area("Obs")
                 if st.form_submit_button("Agendar"):
