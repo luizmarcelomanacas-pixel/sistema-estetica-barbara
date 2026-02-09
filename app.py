@@ -265,6 +265,7 @@ with st.sidebar:
                              "🎂 Insights"])
     st.markdown("---")
     if st.button("🔄 Atualizar"): st.rerun()
+
     if st.button("📧 Enviar Agenda Email"):
         with st.spinner("Enviando..."):
             retorno = enviar_agenda_email()
@@ -538,7 +539,7 @@ elif menu == "💉 Procedimentos":
             if st.button("Deletar"): delete_data("procedimentos", int(df[df['nome'] == d]['id'].values[0])); st.success(
                 "Deletado!"); time.sleep(1); st.rerun()
 
-# --- PÁGINA: FINANCEIRO ---
+# --- PÁGINA: FINANCEIRO (CORREÇÃO DE KEY ERROR) ---
 elif menu == "💰 Financeiro":
     st.title("Fluxo de Caixa")
     t1, t2 = st.tabs(["Lançar Movimento", "Extrato Completo"])
@@ -566,21 +567,28 @@ elif menu == "💰 Financeiro":
             df['dt_obj'] = pd.to_datetime(df['data_movimento'], errors='coerce')
             df_view = df[df['dt_obj'].dt.month == mes].sort_values('dt_obj', ascending=False)
 
+            # --- VACINA ANTI-ERRO (KEY ERROR / TIPO) ---
+            # Define as colunas que TEM que existir
             cols_show = ['id', 'data_movimento', 'tipo', 'descricao', 'valor', 'status', 'categoria']
 
-            # --- LIMPEZA BLINDADA ANTI-ERRO ---
-            # 1. Cria cópia segura dos dados
-            df_editor_safe = df_view[cols_show].copy()
+            # Garante que todas existam no dataframe, se não, cria com padrão
+            for col in cols_show:
+                if col not in df_view.columns:
+                    if col == 'valor':
+                        df_view[col] = 0.0
+                    elif col == 'status':
+                        df_view[col] = 'Pendente'
+                    elif col == 'id':
+                        df_view[col] = 0
+                    else:
+                        df_view[col] = ''
 
-            # 2. Força ID como inteiro
-            df_editor_safe['id'] = pd.to_numeric(df_editor_safe['id'], errors='coerce').fillna(0).astype(int)
-
-            # 3. Força Valor como Float (número)
-            df_editor_safe['valor'] = pd.to_numeric(df_editor_safe['valor'], errors='coerce').fillna(0.0)
-
-            # 4. Força Status compatível com o menu (Pago/Pendente)
-            df_editor_safe['status'] = df_editor_safe['status'].apply(
-                lambda x: x if x in ["Pago", "Pendente"] else "Pendente")
+            # Limpeza de Tipos (Blindagem)
+            df_view['id'] = pd.to_numeric(df_view['id'], errors='coerce').fillna(0).astype(int)
+            df_view['valor'] = pd.to_numeric(df_view['valor'], errors='coerce').fillna(0.0)
+            df_view['status'] = df_view['status'].astype(str)
+            mask_nan = df_view['status'].isin(['nan', 'None', '<NA>'])
+            df_view.loc[mask_nan, 'status'] = 'Pendente'
 
             col_cfg = {
                 "id": st.column_config.NumberColumn(disabled=True, width="small"),
@@ -591,19 +599,18 @@ elif menu == "💰 Financeiro":
                 "data_movimento": st.column_config.DateColumn("Data", format="DD/MM/YYYY")
             }
 
-            edited = st.data_editor(df_editor_safe, column_config=col_cfg, hide_index=True, use_container_width=True,
-                                    key="fin_ed")
+            # Agora usa apenas a view tratada, sem risco de Key Error
+            edited = st.data_editor(df_view[cols_show], column_config=col_cfg, hide_index=True,
+                                    use_container_width=True, key="fin_ed")
 
             if st.button("💾 Salvar Alterações Financeiras"):
                 changes = 0
                 for i, row in edited.iterrows():
-                    # Busca original no DataFrame mestre pelo ID
-                    original_row = df[df['id'] == row['id']]
-                    if not original_row.empty:
-                        orig = original_row.iloc[0]
-                        # Verifica mudanças
-                        if row['status'] != orig.get('status') or float(row['valor']) != float(orig['valor']) or row[
-                            'descricao'] != orig['descricao']:
+                    orig_row = df[df['id'] == row['id']]
+                    if not orig_row.empty:
+                        orig = orig_row.iloc[0]
+                        if row['status'] != orig.get('status') or float(row['valor']) != float(orig.get('valor', 0)) or \
+                                row['descricao'] != orig.get('descricao', ''):
                             update_data("financeiro", int(row['id']), {
                                 "status": row['status'],
                                 "valor": float(row['valor']),
