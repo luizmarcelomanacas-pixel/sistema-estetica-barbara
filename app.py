@@ -345,7 +345,6 @@ elif menu == "📅 Agenda":
                 events.append(
                     {"title": f"{row['cliente_nome']} - {row['procedimento_nome']}", "start": start, "end": end,
                      "backgroundColor": cor, "borderColor": cor})
-            # CORREÇÃO AGENDA: VOLTEI PARA INGLÊS PADRÃO (LOCALE PADRÃO)
             calendar(events=events, options={"headerToolbar": {"left": "today prev,next", "center": "title",
                                                                "right": "timeGridDay,timeGridWeek,dayGridMonth"},
                                              "initialView": "dayGridMonth"}, key=f"cal_{len(events)}")
@@ -539,7 +538,7 @@ elif menu == "💉 Procedimentos":
             if st.button("Deletar"): delete_data("procedimentos", int(df[df['nome'] == d]['id'].values[0])); st.success(
                 "Deletado!"); time.sleep(1); st.rerun()
 
-# --- PÁGINA: FINANCEIRO (CORRIGIDA E BLINDADA) ---
+# --- PÁGINA: FINANCEIRO (CORRIGIDA E RECONSTRUÍDA) ---
 elif menu == "💰 Financeiro":
     st.title("Fluxo de Caixa")
     t1, t2 = st.tabs(["Lançar Movimento", "Extrato Completo"])
@@ -569,22 +568,35 @@ elif menu == "💰 Financeiro":
             df['dt_obj'] = pd.to_datetime(df['data_movimento'], errors='coerce')
             df_view = df[df['dt_obj'].dt.month == mes].sort_values('dt_obj', ascending=False)
 
-            # --- VACINA ANTI-ERRO (KEY ERROR / TIPO) ---
-            # Define as colunas que TEM que existir
-            cols_to_use = ['id', 'data_movimento', 'tipo', 'descricao', 'valor', 'status', 'categoria']
+            # --- RECONSTRUÇÃO TOTAL DA TABELA (ANTI-CRASH) ---
+            # Em vez de tentar converter o dataframe existente (que pode ter tipos mistos),
+            # criamos uma lista nova limpa, garantindo que tudo é int, float ou str.
+            clean_rows = []
+            for idx, row in df_view.iterrows():
+                # Tratamento seguro de cada campo
+                safe_id = int(row.get('id', 0)) if pd.notnull(row.get('id')) else 0
 
-            # Garante que todas existam no dataframe, se não, cria com padrão
-            for col in cols_to_use:
-                if col not in df_view.columns:
-                    df_view[col] = None
+                raw_val = row.get('valor', 0.0)
+                try:
+                    safe_val = float(raw_val)
+                except:
+                    safe_val = 0.0
 
-            # CRIAÇÃO DE UM DATAFRAME LIMPO (AQUI ESTÁ A CORREÇÃO DO ERRO)
-            df_clean = df_view[cols_to_use].copy()
+                raw_stat = row.get('status', 'Pendente')
+                safe_stat = str(raw_stat) if raw_stat and str(raw_stat) in ["Pago", "Pendente"] else "Pendente"
 
-            # CONVERSÃO FORÇADA DE TIPOS (ISSO EVITA O StreamlitAPIException)
-            df_clean['id'] = pd.to_numeric(df_clean['id'], errors='coerce').fillna(0).astype(int)
-            df_clean['valor'] = pd.to_numeric(df_clean['valor'], errors='coerce').fillna(0.0).astype(float)
-            df_clean['status'] = df_clean['status'].astype(str).replace(['None', 'nan', '<NA>', ''], 'Pendente')
+                clean_rows.append({
+                    "id": safe_id,
+                    "data_movimento": row.get('data_movimento'),
+                    "tipo": str(row.get('tipo', '')),
+                    "descricao": str(row.get('descricao', '')),
+                    "valor": safe_val,
+                    "status": safe_stat,
+                    "categoria": str(row.get('categoria', ''))
+                })
+
+            # Cria DataFrame novo e limpo
+            df_clean = pd.DataFrame(clean_rows)
 
             col_cfg = {
                 "id": st.column_config.NumberColumn(disabled=True, width="small"),
@@ -595,37 +607,42 @@ elif menu == "💰 Financeiro":
                 "data_movimento": st.column_config.DateColumn("Data", format="DD/MM/YYYY")
             }
 
-            # Agora usa apenas a view tratada, sem risco de Key Error
-            edited = st.data_editor(df_clean, column_config=col_cfg, hide_index=True, use_container_width=True,
-                                    key="fin_ed_safe")
+            if not df_clean.empty:
+                edited = st.data_editor(df_clean, column_config=col_cfg, hide_index=True, use_container_width=True,
+                                        key="fin_ed_safe")
 
-            if st.button("💾 Salvar Alterações Financeiras"):
-                changes = 0
-                for i, row in edited.iterrows():
-                    orig_row = df[df['id'] == row['id']]
-                    if not orig_row.empty:
-                        orig = orig_row.iloc[0]
-                        if row['status'] != orig.get('status') or abs(
-                                float(row['valor']) - float(orig.get('valor', 0))) > 0.01 or row[
-                            'descricao'] != orig.get('descricao', ''):
-                            update_data("financeiro", int(row['id']), {
-                                "status": row['status'],
-                                "valor": float(row['valor']),
-                                "descricao": row['descricao']
-                            })
-                            changes += 1
-                if changes:
-                    st.success("Atualizado!"); time.sleep(1); st.rerun()
-                else:
-                    st.info("Nada mudou.")
+                if st.button("💾 Salvar Alterações Financeiras"):
+                    changes = 0
+                    for i, row in edited.iterrows():
+                        orig_row = df[df['id'] == row['id']]
+                        if not orig_row.empty:
+                            orig = orig_row.iloc[0]
+                            # Compara usando os mesmos tipos seguros
+                            orig_val = float(orig.get('valor', 0.0) or 0.0)
+                            orig_stat = str(orig.get('status', 'Pendente'))
 
-            st.download_button("Excel", to_excel(edited), "financeiro.xlsx")
-            d_id = st.selectbox("Excluir ID:", df_clean.apply(lambda x: f"{x['id']}: {x['descricao']}", axis=1))
-            if st.button("🗑️ Apagar Item"):
-                delete_data("financeiro", int(d_id.split(":")[0]));
-                st.success("Apagado!");
-                time.sleep(1);
-                st.rerun()
+                            if row['status'] != orig_stat or abs(row['valor'] - orig_val) > 0.01 or row[
+                                'descricao'] != orig.get('descricao', ''):
+                                update_data("financeiro", int(row['id']), {
+                                    "status": row['status'],
+                                    "valor": float(row['valor']),
+                                    "descricao": row['descricao']
+                                })
+                                changes += 1
+                    if changes:
+                        st.success("Atualizado!"); time.sleep(1); st.rerun()
+                    else:
+                        st.info("Nada mudou.")
+
+                st.download_button("Excel", to_excel(edited), "financeiro.xlsx")
+                d_id = st.selectbox("Excluir ID:", df_clean.apply(lambda x: f"{x['id']}: {x['descricao']}", axis=1))
+                if st.button("🗑️ Apagar Item"):
+                    delete_data("financeiro", int(d_id.split(":")[0]));
+                    st.success("Apagado!");
+                    time.sleep(1);
+                    st.rerun()
+            else:
+                st.info("Nenhum registro encontrado neste mês.")
         else:
             st.info("Nenhum registro financeiro encontrado.")
 
