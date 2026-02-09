@@ -265,7 +265,6 @@ with st.sidebar:
                              "🎂 Insights"])
     st.markdown("---")
     if st.button("🔄 Atualizar"): st.rerun()
-
     if st.button("📧 Enviar Agenda Email"):
         with st.spinner("Enviando..."):
             retorno = enviar_agenda_email()
@@ -346,6 +345,7 @@ elif menu == "📅 Agenda":
                 events.append(
                     {"title": f"{row['cliente_nome']} - {row['procedimento_nome']}", "start": start, "end": end,
                      "backgroundColor": cor, "borderColor": cor})
+            # CORREÇÃO AGENDA: VOLTEI PARA INGLÊS PADRÃO (LOCALE PADRÃO)
             calendar(events=events, options={"headerToolbar": {"left": "today prev,next", "center": "title",
                                                                "right": "timeGridDay,timeGridWeek,dayGridMonth"},
                                              "initialView": "dayGridMonth"}, key=f"cal_{len(events)}")
@@ -539,10 +539,11 @@ elif menu == "💉 Procedimentos":
             if st.button("Deletar"): delete_data("procedimentos", int(df[df['nome'] == d]['id'].values[0])); st.success(
                 "Deletado!"); time.sleep(1); st.rerun()
 
-# --- PÁGINA: FINANCEIRO (CORREÇÃO DE KEY ERROR) ---
+# --- PÁGINA: FINANCEIRO (CORRIGIDA E BLINDADA) ---
 elif menu == "💰 Financeiro":
     st.title("Fluxo de Caixa")
     t1, t2 = st.tabs(["Lançar Movimento", "Extrato Completo"])
+
     with t1:
         with st.form("ff"):
             c1, c2 = st.columns(2)
@@ -564,31 +565,26 @@ elif menu == "💰 Financeiro":
         df = get_data("financeiro")
         if not df.empty:
             mes = st.slider("Mês", 1, 12, data_hoje_br().month)
+            if 'data_movimento' not in df.columns: df['data_movimento'] = str(data_hoje_br())
             df['dt_obj'] = pd.to_datetime(df['data_movimento'], errors='coerce')
             df_view = df[df['dt_obj'].dt.month == mes].sort_values('dt_obj', ascending=False)
 
             # --- VACINA ANTI-ERRO (KEY ERROR / TIPO) ---
             # Define as colunas que TEM que existir
-            cols_show = ['id', 'data_movimento', 'tipo', 'descricao', 'valor', 'status', 'categoria']
+            cols_to_use = ['id', 'data_movimento', 'tipo', 'descricao', 'valor', 'status', 'categoria']
 
             # Garante que todas existam no dataframe, se não, cria com padrão
-            for col in cols_show:
+            for col in cols_to_use:
                 if col not in df_view.columns:
-                    if col == 'valor':
-                        df_view[col] = 0.0
-                    elif col == 'status':
-                        df_view[col] = 'Pendente'
-                    elif col == 'id':
-                        df_view[col] = 0
-                    else:
-                        df_view[col] = ''
+                    df_view[col] = None
 
-            # Limpeza de Tipos (Blindagem)
-            df_view['id'] = pd.to_numeric(df_view['id'], errors='coerce').fillna(0).astype(int)
-            df_view['valor'] = pd.to_numeric(df_view['valor'], errors='coerce').fillna(0.0)
-            df_view['status'] = df_view['status'].astype(str)
-            mask_nan = df_view['status'].isin(['nan', 'None', '<NA>'])
-            df_view.loc[mask_nan, 'status'] = 'Pendente'
+            # CRIAÇÃO DE UM DATAFRAME LIMPO (AQUI ESTÁ A CORREÇÃO DO ERRO)
+            df_clean = df_view[cols_to_use].copy()
+
+            # CONVERSÃO FORÇADA DE TIPOS (ISSO EVITA O StreamlitAPIException)
+            df_clean['id'] = pd.to_numeric(df_clean['id'], errors='coerce').fillna(0).astype(int)
+            df_clean['valor'] = pd.to_numeric(df_clean['valor'], errors='coerce').fillna(0.0).astype(float)
+            df_clean['status'] = df_clean['status'].astype(str).replace(['None', 'nan', '<NA>', ''], 'Pendente')
 
             col_cfg = {
                 "id": st.column_config.NumberColumn(disabled=True, width="small"),
@@ -600,8 +596,8 @@ elif menu == "💰 Financeiro":
             }
 
             # Agora usa apenas a view tratada, sem risco de Key Error
-            edited = st.data_editor(df_view[cols_show], column_config=col_cfg, hide_index=True,
-                                    use_container_width=True, key="fin_ed")
+            edited = st.data_editor(df_clean, column_config=col_cfg, hide_index=True, use_container_width=True,
+                                    key="fin_ed_safe")
 
             if st.button("💾 Salvar Alterações Financeiras"):
                 changes = 0
@@ -609,8 +605,9 @@ elif menu == "💰 Financeiro":
                     orig_row = df[df['id'] == row['id']]
                     if not orig_row.empty:
                         orig = orig_row.iloc[0]
-                        if row['status'] != orig.get('status') or float(row['valor']) != float(orig.get('valor', 0)) or \
-                                row['descricao'] != orig.get('descricao', ''):
+                        if row['status'] != orig.get('status') or abs(
+                                float(row['valor']) - float(orig.get('valor', 0))) > 0.01 or row[
+                            'descricao'] != orig.get('descricao', ''):
                             update_data("financeiro", int(row['id']), {
                                 "status": row['status'],
                                 "valor": float(row['valor']),
@@ -623,12 +620,14 @@ elif menu == "💰 Financeiro":
                     st.info("Nada mudou.")
 
             st.download_button("Excel", to_excel(edited), "financeiro.xlsx")
-            d_id = st.selectbox("Excluir ID:", df_view.apply(lambda x: f"{x['id']}: {x['descricao']}", axis=1))
+            d_id = st.selectbox("Excluir ID:", df_clean.apply(lambda x: f"{x['id']}: {x['descricao']}", axis=1))
             if st.button("🗑️ Apagar Item"):
                 delete_data("financeiro", int(d_id.split(":")[0]));
                 st.success("Apagado!");
                 time.sleep(1);
                 st.rerun()
+        else:
+            st.info("Nenhum registro financeiro encontrado.")
 
 # --- PÁGINA: RELATÓRIOS ---
 elif menu == "📑 Relatórios":
