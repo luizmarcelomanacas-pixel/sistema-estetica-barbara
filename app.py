@@ -39,8 +39,10 @@ def check_login():
             password = st.text_input("Senha", type="password")
             if st.form_submit_button("Entrar", type="primary"):
                 try:
+                    # Tenta pegar do secrets, se não tiver usa padrão
                     admin_user = st.secrets["admin"]["usuario"] if "admin" in st.secrets else "admin"
                     admin_pass = st.secrets["admin"]["senha"] if "admin" in st.secrets else "1234"
+
                     if user == admin_user and password == admin_pass:
                         st.session_state["logado"] = True
                         st.toast("Login realizado com sucesso!", icon="✅")
@@ -49,7 +51,7 @@ def check_login():
                     else:
                         st.error("Usuário ou senha incorretos.")
                 except Exception:
-                    st.error("Erro no login.")
+                    st.error("Erro Crítico no Login.")
 
 
 if not st.session_state["logado"]:
@@ -147,11 +149,13 @@ def gerar_ficha_individual(dados_cliente):
     pdf.line(10, pdf.get_y(), 200, pdf.get_y());
     pdf.ln(5)
     pdf.set_font("Arial", size=12)
-    nome = str(dados_cliente['nome']).encode('latin-1', 'replace').decode('latin-1')
+    nome = str(dados_cliente.get('nome', '')).encode('latin-1', 'replace').decode('latin-1')
     email = str(dados_cliente.get('email', '')).encode('latin-1', 'replace').decode('latin-1')
+    tel_cli = str(dados_cliente.get('telefone', ''))
     pdf.cell(0, 8, f"Nome: {nome}", ln=True)
-    pdf.cell(0, 8, f"Telefone: {dados_cliente['telefone']}", ln=True)
+    pdf.cell(0, 8, f"Telefone: {tel_cli}", ln=True)
     pdf.cell(0, 8, f"E-mail: {email}", ln=True)
+
     nasc = dados_cliente.get('data_nascimento', '')
     if nasc:
         try:
@@ -159,6 +163,7 @@ def gerar_ficha_individual(dados_cliente):
                                                                                    ln=True)
         except:
             pass
+
     pdf.ln(10);
     pdf.set_font("Arial", 'B', 12);
     pdf.cell(0, 10, "HISTÓRICO / ANAMNESE:", ln=True)
@@ -310,10 +315,13 @@ if menu == "📊 Dashboard":
         df_vencendo = df_fin[mask].sort_values('dt_obj')
         if not df_vencendo.empty:
             for i, row in df_vencendo.iterrows():
-                if row.get('status', 'Pendente') == 'Pago':
-                    st.success(f"✅ **Pago:** {row['descricao']} — R$ {row['valor']:,.2f}")
+                # Tratamento seguro para exibir status
+                status_show = str(row.get('status', 'Pendente'))
+                if status_show == 'Pago':
+                    st.success(f"✅ **Pago:** {row.get('descricao', '-')} — R$ {float(row.get('valor', 0)):,.2f}")
                 else:
-                    st.error(f"💸 **Vence Hoje:** {row['descricao']} — **R$ {row['valor']:,.2f}**")
+                    st.error(
+                        f"💸 **Vence Hoje:** {row.get('descricao', '-')} — **R$ {float(row.get('valor', 0)):,.2f}**")
         else:
             st.success("Tudo pago! Nenhuma despesa vence hoje. ✅")
     else:
@@ -332,19 +340,19 @@ elif menu == "📅 Agenda":
             events = []
             for i, row in df_ag.iterrows():
                 cor = "#3788d8"
-                if row['status'] == "Concluído":
+                if row.get('status') == "Concluído":
                     cor = "#28a745"
-                elif row['status'] == "Cancelado":
+                elif row.get('status') == "Cancelado":
                     cor = "#dc3545"
-                start = f"{row['data_agendamento']}T{row['hora_agendamento']}"
+                start = f"{row.get('data_agendamento')}T{row.get('hora_agendamento')}"
                 try:
-                    h, m = map(int, str(row['hora_agendamento']).split(':')[
-                        :2]); end = f"{row['data_agendamento']}T{h + 1:02d}:{m:02d}:00"
+                    h, m = map(int, str(row.get('hora_agendamento', '00:00')).split(':')[
+                        :2]); end = f"{row.get('data_agendamento')}T{h + 1:02d}:{m:02d}:00"
                 except:
                     end = start
                 events.append(
-                    {"title": f"{row['cliente_nome']} - {row['procedimento_nome']}", "start": start, "end": end,
-                     "backgroundColor": cor, "borderColor": cor})
+                    {"title": f"{row.get('cliente_nome', '-')} - {row.get('procedimento_nome', '-')}", "start": start,
+                     "end": end, "backgroundColor": cor, "borderColor": cor})
             calendar(events=events, options={"headerToolbar": {"left": "today prev,next", "center": "title",
                                                                "right": "timeGridDay,timeGridWeek,dayGridMonth"},
                                              "initialView": "dayGridMonth"}, key=f"cal_{len(events)}")
@@ -356,6 +364,11 @@ elif menu == "📅 Agenda":
             st.info("💡 Mude para **Concluído** e salve para lançar a Receita.")
             cols_show = ['id', 'data_agendamento', 'hora_agendamento', 'cliente_nome', 'procedimento_nome', 'status',
                          'valor_cobrado']
+
+            # Garante que as colunas existem
+            for c in cols_show:
+                if c not in df_ag.columns: df_ag[c] = None
+
             edited = st.data_editor(df_ag[cols_show], column_config={
                 "status": st.column_config.SelectboxColumn("Status", options=["Agendado", "Concluído", "Cancelado"],
                                                            required=True)}, hide_index=True, use_container_width=True,
@@ -365,13 +378,13 @@ elif menu == "📅 Agenda":
                     original = df_ag[df_ag['id'] == row['id']].iloc[0];
                     changed = False
                     if row['status'] != original['status']: changed = True
-                    if float(row['valor_cobrado']) != float(original['valor_cobrado']): changed = True
+                    if float(row['valor_cobrado'] or 0) != float(original['valor_cobrado'] or 0): changed = True
                     if changed:
                         update_data("agenda", int(row['id']),
-                                    {"status": row['status'], "valor_cobrado": float(row['valor_cobrado'])})
+                                    {"status": row['status'], "valor_cobrado": float(row['valor_cobrado'] or 0)})
                         if row['status'] == "Concluído" and original['status'] != "Concluído":
                             add_data("financeiro", {"descricao": f"Atendimento: {row['cliente_nome']}",
-                                                    "valor": float(row['valor_cobrado']), "tipo": "Receita",
+                                                    "valor": float(row['valor_cobrado'] or 0), "tipo": "Receita",
                                                     "categoria": "Atendimento", "data_movimento": str(data_hoje_br()),
                                                     "forma_pagamento": "Indefinido", "status": "Pago"})
                             st.toast("💰 Receita lançada no caixa!", icon="🤑");
@@ -466,16 +479,16 @@ elif menu == "👥 Clientes":
                 nt = st.text_input("Zap", d['telefone']);
                 ne = st.text_input("Email", d['email'])
 
-                # CORREÇÃO CLIENTES: DATA DE NASCIMENTO
+                # CORREÇÃO CLIENTES: DATA DE NASCIMENTO (Tratamento de erro)
                 data_nasc_valor = date(1980, 1, 1)
-                if d['data_nascimento']:
+                if d.get('data_nascimento'):
                     try:
                         data_nasc_valor = datetime.strptime(d['data_nascimento'], '%Y-%m-%d').date()
                     except:
                         pass
 
                 ndt = st.date_input("Nascimento", data_nasc_valor)
-                na = st.text_area("Anamnese", d['anamnese'])
+                na = st.text_area("Anamnese", d.get('anamnese', ''))
 
                 if st.form_submit_button("Atualizar"):
                     update_data("clientes", int(d['id']),
@@ -538,7 +551,7 @@ elif menu == "💉 Procedimentos":
             if st.button("Deletar"): delete_data("procedimentos", int(df[df['nome'] == d]['id'].values[0])); st.success(
                 "Deletado!"); time.sleep(1); st.rerun()
 
-# --- PÁGINA: FINANCEIRO (CORRIGIDA E RECONSTRUÍDA) ---
+# --- PÁGINA: FINANCEIRO (CORRIGIDA - RECONSTRUÇÃO TOTAL ANTI-ERRO) ---
 elif menu == "💰 Financeiro":
     st.title("Fluxo de Caixa")
     t1, t2 = st.tabs(["Lançar Movimento", "Extrato Completo"])
@@ -568,34 +581,48 @@ elif menu == "💰 Financeiro":
             df['dt_obj'] = pd.to_datetime(df['data_movimento'], errors='coerce')
             df_view = df[df['dt_obj'].dt.month == mes].sort_values('dt_obj', ascending=False)
 
-            # --- RECONSTRUÇÃO TOTAL DA TABELA (ANTI-CRASH) ---
-            # Em vez de tentar converter o dataframe existente (que pode ter tipos mistos),
-            # criamos uma lista nova limpa, garantindo que tudo é int, float ou str.
+            # --- SOLUÇÃO DEFINITIVA ANTI-CRASH: RECONSTRUÇÃO DE LISTA ---
+            # O erro StreamlitAPIException acontece por incompatibilidade de tipos internos do Pandas.
+            # Aqui criamos uma lista de dicionários limpa, forçando tipos Python puros.
+
             clean_rows = []
             for idx, row in df_view.iterrows():
-                # Tratamento seguro de cada campo
-                safe_id = int(row.get('id', 0)) if pd.notnull(row.get('id')) else 0
-
-                raw_val = row.get('valor', 0.0)
+                # 1. Trata ID
                 try:
-                    safe_val = float(raw_val)
+                    safe_id = int(row.get('id', 0))
+                except:
+                    safe_id = 0
+
+                # 2. Trata Valor (Float Puro)
+                try:
+                    safe_val = float(row.get('valor', 0.0))
                 except:
                     safe_val = 0.0
 
+                # 3. Trata Status (String Pura e Válida)
                 raw_stat = row.get('status', 'Pendente')
-                safe_stat = str(raw_stat) if raw_stat and str(raw_stat) in ["Pago", "Pendente"] else "Pendente"
+                if raw_stat not in ["Pago", "Pendente"]:
+                    safe_stat = "Pendente"
+                else:
+                    safe_stat = str(raw_stat)
+
+                # 4. Trata Textos
+                safe_desc = str(row.get('descricao', ''))
+                safe_tipo = str(row.get('tipo', ''))
+                safe_data = row.get('data_movimento')  # Date object ou string
+                safe_cat = str(row.get('categoria', ''))
 
                 clean_rows.append({
                     "id": safe_id,
-                    "data_movimento": row.get('data_movimento'),
-                    "tipo": str(row.get('tipo', '')),
-                    "descricao": str(row.get('descricao', '')),
+                    "data_movimento": safe_data,
+                    "tipo": safe_tipo,
+                    "descricao": safe_desc,
                     "valor": safe_val,
                     "status": safe_stat,
-                    "categoria": str(row.get('categoria', ''))
+                    "categoria": safe_cat
                 })
 
-            # Cria DataFrame novo e limpo
+            # Cria DataFrame novo a partir da lista limpa
             df_clean = pd.DataFrame(clean_rows)
 
             col_cfg = {
@@ -608,8 +635,9 @@ elif menu == "💰 Financeiro":
             }
 
             if not df_clean.empty:
+                # Agora passamos df_clean que é 100% compatível
                 edited = st.data_editor(df_clean, column_config=col_cfg, hide_index=True, use_container_width=True,
-                                        key="fin_ed_safe")
+                                        key="fin_ed_final")
 
                 if st.button("💾 Salvar Alterações Financeiras"):
                     changes = 0
@@ -617,12 +645,14 @@ elif menu == "💰 Financeiro":
                         orig_row = df[df['id'] == row['id']]
                         if not orig_row.empty:
                             orig = orig_row.iloc[0]
-                            # Compara usando os mesmos tipos seguros
-                            orig_val = float(orig.get('valor', 0.0) or 0.0)
-                            orig_stat = str(orig.get('status', 'Pendente'))
+                            # Comparação segura
+                            try:
+                                orig_val = float(orig.get('valor', 0))
+                            except:
+                                orig_val = 0.0
 
-                            if row['status'] != orig_stat or abs(row['valor'] - orig_val) > 0.01 or row[
-                                'descricao'] != orig.get('descricao', ''):
+                            if row['status'] != orig.get('status') or abs(row['valor'] - orig_val) > 0.01 or row[
+                                'descricao'] != orig.get('descricao'):
                                 update_data("financeiro", int(row['id']), {
                                     "status": row['status'],
                                     "valor": float(row['valor']),
@@ -635,16 +665,20 @@ elif menu == "💰 Financeiro":
                         st.info("Nada mudou.")
 
                 st.download_button("Excel", to_excel(edited), "financeiro.xlsx")
-                d_id = st.selectbox("Excluir ID:", df_clean.apply(lambda x: f"{x['id']}: {x['descricao']}", axis=1))
-                if st.button("🗑️ Apagar Item"):
+
+                # Exclusão segura
+                del_opts = df_clean.apply(lambda x: f"{x['id']}: {x['descricao']}", axis=1)
+                d_id = st.selectbox("Excluir ID:", del_opts) if not del_opts.empty else None
+
+                if st.button("🗑️ Apagar Item") and d_id:
                     delete_data("financeiro", int(d_id.split(":")[0]));
                     st.success("Apagado!");
                     time.sleep(1);
                     st.rerun()
             else:
-                st.info("Nenhum registro encontrado neste mês.")
+                st.info("Nenhum dado encontrado para este mês.")
         else:
-            st.info("Nenhum registro financeiro encontrado.")
+            st.info("Tabela vazia no banco.")
 
 # --- PÁGINA: RELATÓRIOS ---
 elif menu == "📑 Relatórios":
