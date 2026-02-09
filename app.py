@@ -265,8 +265,6 @@ with st.sidebar:
                              "🎂 Insights"])
     st.markdown("---")
     if st.button("🔄 Atualizar"): st.rerun()
-
-    # CORREÇÃO DO ERRO DE SINTAXE (LINHA 271 NO PRINT)
     if st.button("📧 Enviar Agenda Email"):
         with st.spinner("Enviando..."):
             retorno = enviar_agenda_email()
@@ -347,7 +345,6 @@ elif menu == "📅 Agenda":
                 events.append(
                     {"title": f"{row['cliente_nome']} - {row['procedimento_nome']}", "start": start, "end": end,
                      "backgroundColor": cor, "borderColor": cor})
-            # CORREÇÃO AGENDA: REMOVIDO "locale" PARA VOLTAR AO INGLÊS PADRÃO (TODAY/MONTH)
             calendar(events=events, options={"headerToolbar": {"left": "today prev,next", "center": "title",
                                                                "right": "timeGridDay,timeGridWeek,dayGridMonth"},
                                              "initialView": "dayGridMonth"}, key=f"cal_{len(events)}")
@@ -469,7 +466,7 @@ elif menu == "👥 Clientes":
                 nt = st.text_input("Zap", d['telefone']);
                 ne = st.text_input("Email", d['email'])
 
-                # CORREÇÃO CLIENTES: DATA DE NASCIMENTO VOLTOU AQUI
+                # CORREÇÃO CLIENTES: DATA DE NASCIMENTO
                 data_nasc_valor = date(1980, 1, 1)
                 if d['data_nascimento']:
                     try:
@@ -565,19 +562,25 @@ elif menu == "💰 Financeiro":
     with t2:
         df = get_data("financeiro")
         if not df.empty:
-            if 'status' not in df.columns: df['status'] = 'Pendente'
             mes = st.slider("Mês", 1, 12, data_hoje_br().month)
             df['dt_obj'] = pd.to_datetime(df['data_movimento'], errors='coerce')
             df_view = df[df['dt_obj'].dt.month == mes].sort_values('dt_obj', ascending=False)
 
-            # CORREÇÃO CRÍTICA DO ERRO FINANCEIRO (StreamlitAPIException):
-            # 1. Garante que VALOR é float puro (converte texto se precisar)
-            df_view['valor'] = pd.to_numeric(df_view['valor'], errors='coerce').fillna(0.0)
+            cols_show = ['id', 'data_movimento', 'tipo', 'descricao', 'valor', 'status', 'categoria']
 
-            # 2. Garante que STATUS é string (converte Nones para 'Pendente')
-            df_view['status'] = df_view['status'].astype(str)
-            mask_nan = df_view['status'].isin(['nan', 'None', '<NA>'])
-            df_view.loc[mask_nan, 'status'] = 'Pendente'
+            # --- LIMPEZA BLINDADA ANTI-ERRO ---
+            # 1. Cria cópia segura dos dados
+            df_editor_safe = df_view[cols_show].copy()
+
+            # 2. Força ID como inteiro
+            df_editor_safe['id'] = pd.to_numeric(df_editor_safe['id'], errors='coerce').fillna(0).astype(int)
+
+            # 3. Força Valor como Float (número)
+            df_editor_safe['valor'] = pd.to_numeric(df_editor_safe['valor'], errors='coerce').fillna(0.0)
+
+            # 4. Força Status compatível com o menu (Pago/Pendente)
+            df_editor_safe['status'] = df_editor_safe['status'].apply(
+                lambda x: x if x in ["Pago", "Pendente"] else "Pendente")
 
             col_cfg = {
                 "id": st.column_config.NumberColumn(disabled=True, width="small"),
@@ -587,26 +590,31 @@ elif menu == "💰 Financeiro":
                 "tipo": st.column_config.TextColumn(disabled=True),
                 "data_movimento": st.column_config.DateColumn("Data", format="DD/MM/YYYY")
             }
-            cols_show = ['id', 'data_movimento', 'tipo', 'descricao', 'valor', 'status', 'categoria']
 
-            # Agora os dados estão limpinhos para o editor não travar
-            edited = st.data_editor(df_view[cols_show], column_config=col_cfg, hide_index=True,
-                                    use_container_width=True, key="fin_ed")
+            edited = st.data_editor(df_editor_safe, column_config=col_cfg, hide_index=True, use_container_width=True,
+                                    key="fin_ed")
 
             if st.button("💾 Salvar Alterações Financeiras"):
                 changes = 0
                 for i, row in edited.iterrows():
-                    orig = df[df['id'] == row['id']].iloc[0]
-                    if row['status'] != orig.get('status') or float(row['valor']) != float(orig['valor']) or row[
-                        'descricao'] != orig['descricao']:
-                        update_data("financeiro", int(row['id']),
-                                    {"status": row['status'], "valor": float(row['valor']),
-                                     "descricao": row['descricao']})
-                        changes += 1
+                    # Busca original no DataFrame mestre pelo ID
+                    original_row = df[df['id'] == row['id']]
+                    if not original_row.empty:
+                        orig = original_row.iloc[0]
+                        # Verifica mudanças
+                        if row['status'] != orig.get('status') or float(row['valor']) != float(orig['valor']) or row[
+                            'descricao'] != orig['descricao']:
+                            update_data("financeiro", int(row['id']), {
+                                "status": row['status'],
+                                "valor": float(row['valor']),
+                                "descricao": row['descricao']
+                            })
+                            changes += 1
                 if changes:
                     st.success("Atualizado!"); time.sleep(1); st.rerun()
                 else:
                     st.info("Nada mudou.")
+
             st.download_button("Excel", to_excel(edited), "financeiro.xlsx")
             d_id = st.selectbox("Excluir ID:", df_view.apply(lambda x: f"{x['id']}: {x['descricao']}", axis=1))
             if st.button("🗑️ Apagar Item"):
