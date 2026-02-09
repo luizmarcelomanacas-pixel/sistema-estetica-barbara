@@ -39,10 +39,8 @@ def check_login():
             password = st.text_input("Senha", type="password")
             if st.form_submit_button("Entrar", type="primary"):
                 try:
-                    # Tenta pegar do secrets, se não tiver usa padrão
                     admin_user = st.secrets["admin"]["usuario"] if "admin" in st.secrets else "admin"
                     admin_pass = st.secrets["admin"]["senha"] if "admin" in st.secrets else "1234"
-
                     if user == admin_user and password == admin_pass:
                         st.session_state["logado"] = True
                         st.toast("Login realizado com sucesso!", icon="✅")
@@ -51,7 +49,7 @@ def check_login():
                     else:
                         st.error("Usuário ou senha incorretos.")
                 except Exception:
-                    st.error("Erro Crítico no Login.")
+                    st.error("Erro no login.")
 
 
 if not st.session_state["logado"]:
@@ -149,13 +147,11 @@ def gerar_ficha_individual(dados_cliente):
     pdf.line(10, pdf.get_y(), 200, pdf.get_y());
     pdf.ln(5)
     pdf.set_font("Arial", size=12)
-    nome = str(dados_cliente.get('nome', '')).encode('latin-1', 'replace').decode('latin-1')
+    nome = str(dados_cliente['nome']).encode('latin-1', 'replace').decode('latin-1')
     email = str(dados_cliente.get('email', '')).encode('latin-1', 'replace').decode('latin-1')
-    tel_cli = str(dados_cliente.get('telefone', ''))
     pdf.cell(0, 8, f"Nome: {nome}", ln=True)
-    pdf.cell(0, 8, f"Telefone: {tel_cli}", ln=True)
+    pdf.cell(0, 8, f"Telefone: {dados_cliente['telefone']}", ln=True)
     pdf.cell(0, 8, f"E-mail: {email}", ln=True)
-
     nasc = dados_cliente.get('data_nascimento', '')
     if nasc:
         try:
@@ -163,7 +159,6 @@ def gerar_ficha_individual(dados_cliente):
                                                                                    ln=True)
         except:
             pass
-
     pdf.ln(10);
     pdf.set_font("Arial", 'B', 12);
     pdf.cell(0, 10, "HISTÓRICO / ANAMNESE:", ln=True)
@@ -315,7 +310,6 @@ if menu == "📊 Dashboard":
         df_vencendo = df_fin[mask].sort_values('dt_obj')
         if not df_vencendo.empty:
             for i, row in df_vencendo.iterrows():
-                # Tratamento seguro para exibir status
                 status_show = str(row.get('status', 'Pendente'))
                 if status_show == 'Pago':
                     st.success(f"✅ **Pago:** {row.get('descricao', '-')} — R$ {float(row.get('valor', 0)):,.2f}")
@@ -364,8 +358,6 @@ elif menu == "📅 Agenda":
             st.info("💡 Mude para **Concluído** e salve para lançar a Receita.")
             cols_show = ['id', 'data_agendamento', 'hora_agendamento', 'cliente_nome', 'procedimento_nome', 'status',
                          'valor_cobrado']
-
-            # Garante que as colunas existem
             for c in cols_show:
                 if c not in df_ag.columns: df_ag[c] = None
 
@@ -479,7 +471,7 @@ elif menu == "👥 Clientes":
                 nt = st.text_input("Zap", d['telefone']);
                 ne = st.text_input("Email", d['email'])
 
-                # CORREÇÃO CLIENTES: DATA DE NASCIMENTO (Tratamento de erro)
+                # CORREÇÃO CLIENTES: DATA DE NASCIMENTO
                 data_nasc_valor = date(1980, 1, 1)
                 if d.get('data_nascimento'):
                     try:
@@ -551,7 +543,7 @@ elif menu == "💉 Procedimentos":
             if st.button("Deletar"): delete_data("procedimentos", int(df[df['nome'] == d]['id'].values[0])); st.success(
                 "Deletado!"); time.sleep(1); st.rerun()
 
-# --- PÁGINA: FINANCEIRO (CORRIGIDA - RECONSTRUÇÃO TOTAL ANTI-ERRO) ---
+# --- PÁGINA: FINANCEIRO (BLINDAGEM TOTAL ANTI-CRASH) ---
 elif menu == "💰 Financeiro":
     st.title("Fluxo de Caixa")
     t1, t2 = st.tabs(["Lançar Movimento", "Extrato Completo"])
@@ -576,109 +568,114 @@ elif menu == "💰 Financeiro":
     with t2:
         df = get_data("financeiro")
         if not df.empty:
+            # 1. Filtra por data
             mes = st.slider("Mês", 1, 12, data_hoje_br().month)
             if 'data_movimento' not in df.columns: df['data_movimento'] = str(data_hoje_br())
             df['dt_obj'] = pd.to_datetime(df['data_movimento'], errors='coerce')
             df_view = df[df['dt_obj'].dt.month == mes].sort_values('dt_obj', ascending=False)
 
-            # --- SOLUÇÃO DEFINITIVA ANTI-CRASH: RECONSTRUÇÃO DE LISTA ---
-            # O erro StreamlitAPIException acontece por incompatibilidade de tipos internos do Pandas.
-            # Aqui criamos uma lista de dicionários limpa, forçando tipos Python puros.
+            # --- SOLUÇÃO DEFINITIVA: RECONSTRUÇÃO SEGURA ---
+            # Se a tabela tiver lixo (valores nulos ou tipos mistos), o Streamlit trava.
+            # Aqui recriamos a tabela linha a linha, forçando os tipos corretos.
 
             clean_rows = []
             for idx, row in df_view.iterrows():
-                # 1. Trata ID
+                # ID (Int)
                 try:
                     safe_id = int(row.get('id', 0))
                 except:
                     safe_id = 0
 
-                # 2. Trata Valor (Float Puro)
+                # Valor (Float)
                 try:
                     safe_val = float(row.get('valor', 0.0))
                 except:
                     safe_val = 0.0
 
-                # 3. Trata Status (String Pura e Válida)
-                raw_stat = row.get('status', 'Pendente')
-                if raw_stat not in ["Pago", "Pendente"]:
-                    safe_stat = "Pendente"
-                else:
-                    safe_stat = str(raw_stat)
+                # Status (String Validada)
+                raw_stat = str(row.get('status', 'Pendente'))
+                safe_stat = raw_stat if raw_stat in ["Pago", "Pendente"] else "Pendente"
 
-                # 4. Trata Textos
-                safe_desc = str(row.get('descricao', ''))
-                safe_tipo = str(row.get('tipo', ''))
-                safe_data = row.get('data_movimento')  # Date object ou string
-                safe_cat = str(row.get('categoria', ''))
+                # Data (Date Object - Importante!)
+                try:
+                    d_str = str(row.get('data_movimento', ''))
+                    safe_date = datetime.strptime(d_str, '%Y-%m-%d').date()
+                except:
+                    safe_date = date.today()
 
                 clean_rows.append({
                     "id": safe_id,
-                    "data_movimento": safe_data,
-                    "tipo": safe_tipo,
-                    "descricao": safe_desc,
+                    "data_movimento": safe_date,  # Agora é objeto Date, não string
+                    "tipo": str(row.get('tipo', '')),
+                    "descricao": str(row.get('descricao', '')),
                     "valor": safe_val,
                     "status": safe_stat,
-                    "categoria": safe_cat
+                    "categoria": str(row.get('categoria', ''))
                 })
 
-            # Cria DataFrame novo a partir da lista limpa
             df_clean = pd.DataFrame(clean_rows)
 
-            col_cfg = {
-                "id": st.column_config.NumberColumn(disabled=True, width="small"),
-                "valor": st.column_config.NumberColumn("Valor", format="R$ %.2f", min_value=0.0),
-                "status": st.column_config.SelectboxColumn("Status", options=["Pago", "Pendente"], width="medium",
-                                                           required=True),
-                "tipo": st.column_config.TextColumn(disabled=True),
-                "data_movimento": st.column_config.DateColumn("Data", format="DD/MM/YYYY")
-            }
+            # Configuração segura
+            try:
+                col_cfg = {
+                    "id": st.column_config.NumberColumn(disabled=True, width="small"),
+                    "valor": st.column_config.NumberColumn("Valor", format="R$ %.2f", min_value=0.0),
+                    "status": st.column_config.SelectboxColumn("Status", options=["Pago", "Pendente"], width="medium",
+                                                               required=True),
+                    "tipo": st.column_config.TextColumn(disabled=True),
+                    "data_movimento": st.column_config.DateColumn("Data", format="DD/MM/YYYY")
+                }
 
-            if not df_clean.empty:
-                # Agora passamos df_clean que é 100% compatível
-                edited = st.data_editor(df_clean, column_config=col_cfg, hide_index=True, use_container_width=True,
-                                        key="fin_ed_final")
+                if not df_clean.empty:
+                    edited = st.data_editor(df_clean, column_config=col_cfg, hide_index=True, use_container_width=True,
+                                            key="fin_ed_safe")
 
-                if st.button("💾 Salvar Alterações Financeiras"):
-                    changes = 0
-                    for i, row in edited.iterrows():
-                        orig_row = df[df['id'] == row['id']]
-                        if not orig_row.empty:
-                            orig = orig_row.iloc[0]
-                            # Comparação segura
-                            try:
-                                orig_val = float(orig.get('valor', 0))
-                            except:
-                                orig_val = 0.0
+                    if st.button("💾 Salvar Alterações Financeiras"):
+                        changes = 0
+                        for i, row in edited.iterrows():
+                            # Busca o ID original no banco para update
+                            orig_row = df[df['id'] == row['id']]
+                            if not orig_row.empty:
+                                orig = orig_row.iloc[0]
 
-                            if row['status'] != orig.get('status') or abs(row['valor'] - orig_val) > 0.01 or row[
-                                'descricao'] != orig.get('descricao'):
-                                update_data("financeiro", int(row['id']), {
-                                    "status": row['status'],
-                                    "valor": float(row['valor']),
-                                    "descricao": row['descricao']
-                                })
-                                changes += 1
-                    if changes:
-                        st.success("Atualizado!"); time.sleep(1); st.rerun()
-                    else:
-                        st.info("Nada mudou.")
+                                # Compara tipos seguros
+                                try:
+                                    orig_val = float(orig.get('valor', 0))
+                                except:
+                                    orig_val = 0.0
+                                orig_stat = str(orig.get('status', 'Pendente'))
 
-                st.download_button("Excel", to_excel(edited), "financeiro.xlsx")
+                                if row['status'] != orig_stat or abs(row['valor'] - orig_val) > 0.01 or row[
+                                    'descricao'] != str(orig.get('descricao', '')):
+                                    update_data("financeiro", int(row['id']), {
+                                        "status": row['status'],
+                                        "valor": float(row['valor']),
+                                        "descricao": row['descricao']
+                                    })
+                                    changes += 1
+                        if changes:
+                            st.success("Atualizado!"); time.sleep(1); st.rerun()
+                        else:
+                            st.info("Nada mudou.")
 
-                # Exclusão segura
-                del_opts = df_clean.apply(lambda x: f"{x['id']}: {x['descricao']}", axis=1)
-                d_id = st.selectbox("Excluir ID:", del_opts) if not del_opts.empty else None
+                    # Botões Extras
+                    c_down, c_del = st.columns([1, 1])
+                    c_down.download_button("Excel", to_excel(edited), "financeiro.xlsx")
 
-                if st.button("🗑️ Apagar Item") and d_id:
-                    delete_data("financeiro", int(d_id.split(":")[0]));
-                    st.success("Apagado!");
-                    time.sleep(1);
-                    st.rerun()
-            else:
-                st.info("Nenhum dado encontrado para este mês.")
+                    d_opts = df_clean.apply(lambda x: f"{x['id']}: {x['descricao']}", axis=1)
+                    d_id = c_del.selectbox("Excluir:", d_opts)
+                    if c_del.button("🗑️ Apagar"):
+                        delete_data("financeiro", int(d_id.split(":")[0]));
+                        st.success("Apagado!");
+                        time.sleep(1);
+                        st.rerun()
+                else:
+                    st.info("Sem dados neste mês.")
+            except Exception as e:
+                st.error(f"Erro ao renderizar tabela: {e}")
+                st.dataframe(df_view)  # Fallback simples
         else:
-            st.info("Tabela vazia no banco.")
+            st.info("Banco de dados vazio.")
 
 # --- PÁGINA: RELATÓRIOS ---
 elif menu == "📑 Relatórios":
