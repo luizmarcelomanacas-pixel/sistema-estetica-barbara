@@ -358,13 +358,23 @@ elif menu == "📅 Agenda":
             st.info("💡 Mude para **Concluído** e salve para lançar a Receita.")
             cols_show = ['id', 'data_agendamento', 'hora_agendamento', 'cliente_nome', 'procedimento_nome', 'status',
                          'valor_cobrado']
+
+            # Garante colunas mínimas
             for c in cols_show:
                 if c not in df_ag.columns: df_ag[c] = None
 
-            edited = st.data_editor(df_ag[cols_show], column_config={
+            # --- FORMATAÇÃO DE DATAS NA TABELA (DD/MM/YYYY) ---
+            col_cfg = {
                 "status": st.column_config.SelectboxColumn("Status", options=["Agendado", "Concluído", "Cancelado"],
-                                                           required=True)}, hide_index=True, use_container_width=True,
+                                                           required=True),
+                "data_agendamento": st.column_config.DateColumn("Data", format="DD/MM/YYYY"),  # <-- FORMATAÇÃO AQUI
+                "hora_agendamento": st.column_config.TimeColumn("Hora", format="HH:mm"),
+                "valor_cobrado": st.column_config.NumberColumn("Valor", format="R$ %.2f")
+            }
+
+            edited = st.data_editor(df_ag[cols_show], column_config=col_cfg, hide_index=True, use_container_width=True,
                                     key="ag_editor_safe")
+
             if st.button("💾 Salvar Alterações na Lista"):
                 for i, row in edited.iterrows():
                     original = df_ag[df_ag['id'] == row['id']].iloc[0];
@@ -401,7 +411,10 @@ elif menu == "📅 Agenda":
                 c1, c2 = st.columns(2);
                 cli = c1.selectbox("Cliente", df_cli['nome'].unique());
                 proc = c2.selectbox("Proc", df_proc['nome'].unique())
-                d = c1.date_input("Data", data_hoje_br());
+
+                # --- DATA INPUT FORMATADA ---
+                d = c1.date_input("Data", data_hoje_br(), format="DD/MM/YYYY")
+
                 h = c2.time_input("Hora");
                 obs = st.text_area("Obs")
                 if st.form_submit_button("Agendar"):
@@ -423,6 +436,7 @@ elif menu == "📅 Agenda":
             df_amanha = df_ag[(df_ag['data_agendamento'] == str(amanha)) & (df_ag['status'] == 'Agendado')]
             if not df_amanha.empty:
                 df_amanha = df_amanha.sort_values('hora_agendamento')
+                # Exibe data formatada na mensagem
                 st.write(f"**{len(df_amanha)} confirmações para {amanha.strftime('%d/%m/%Y')}**")
                 for i, row in df_amanha.iterrows():
                     with st.container(border=True):
@@ -453,7 +467,8 @@ elif menu == "👥 Clientes":
             n = st.text_input("Nome*");
             t = st.text_input("Zap");
             e = st.text_input("Email");
-            dt = st.date_input("Nasc", date(1980, 1, 1));
+            # --- DATA INPUT FORMATADA ---
+            dt = st.date_input("Nasc", date(1980, 1, 1), format="DD/MM/YYYY");
             a = st.text_area("Anamnese")
             if st.form_submit_button("Salvar") and n:
                 add_data("clientes", {"nome": n, "telefone": t, "email": e, "data_nascimento": str(dt), "anamnese": a});
@@ -471,7 +486,6 @@ elif menu == "👥 Clientes":
                 nt = st.text_input("Zap", d['telefone']);
                 ne = st.text_input("Email", d['email'])
 
-                # CORREÇÃO CLIENTES: DATA DE NASCIMENTO
                 data_nasc_valor = date(1980, 1, 1)
                 if d.get('data_nascimento'):
                     try:
@@ -479,7 +493,8 @@ elif menu == "👥 Clientes":
                     except:
                         pass
 
-                ndt = st.date_input("Nascimento", data_nasc_valor)
+                # --- DATA INPUT FORMATADA ---
+                ndt = st.date_input("Nascimento", data_nasc_valor, format="DD/MM/YYYY")
                 na = st.text_area("Anamnese", d.get('anamnese', ''))
 
                 if st.form_submit_button("Atualizar"):
@@ -543,7 +558,7 @@ elif menu == "💉 Procedimentos":
             if st.button("Deletar"): delete_data("procedimentos", int(df[df['nome'] == d]['id'].values[0])); st.success(
                 "Deletado!"); time.sleep(1); st.rerun()
 
-# --- PÁGINA: FINANCEIRO (BLINDAGEM TOTAL ANTI-CRASH) ---
+# --- PÁGINA: FINANCEIRO ---
 elif menu == "💰 Financeiro":
     st.title("Fluxo de Caixa")
     t1, t2 = st.tabs(["Lançar Movimento", "Extrato Completo"])
@@ -554,7 +569,10 @@ elif menu == "💰 Financeiro":
             tp = c1.selectbox("Tipo", ["Despesa", "Receita"])
             ds = c2.text_input("Descrição")
             vl = c1.number_input("Valor (R$)", min_value=0.0, step=0.01)
-            dt = c2.date_input("Data", data_hoje_br())
+
+            # --- DATA INPUT FORMATADA ---
+            dt = c2.date_input("Data", data_hoje_br(), format="DD/MM/YYYY")
+
             ct = c1.selectbox("Categoria", ["Atendimento", "Custo Fixo", "Produto", "Impostos"])
             stt = c2.selectbox("Status", ["Pago", "Pendente"])
             if st.form_submit_button("Lançar") and ds:
@@ -568,35 +586,27 @@ elif menu == "💰 Financeiro":
     with t2:
         df = get_data("financeiro")
         if not df.empty:
-            # 1. Filtra por data
             mes = st.slider("Mês", 1, 12, data_hoje_br().month)
             if 'data_movimento' not in df.columns: df['data_movimento'] = str(data_hoje_br())
             df['dt_obj'] = pd.to_datetime(df['data_movimento'], errors='coerce')
             df_view = df[df['dt_obj'].dt.month == mes].sort_values('dt_obj', ascending=False)
 
-            # --- SOLUÇÃO DEFINITIVA: RECONSTRUÇÃO SEGURA ---
-            # Se a tabela tiver lixo (valores nulos ou tipos mistos), o Streamlit trava.
-            # Aqui recriamos a tabela linha a linha, forçando os tipos corretos.
-
             clean_rows = []
             for idx, row in df_view.iterrows():
-                # ID (Int)
                 try:
                     safe_id = int(row.get('id', 0))
                 except:
                     safe_id = 0
 
-                # Valor (Float)
                 try:
                     safe_val = float(row.get('valor', 0.0))
                 except:
                     safe_val = 0.0
 
-                # Status (String Validada)
                 raw_stat = str(row.get('status', 'Pendente'))
                 safe_stat = raw_stat if raw_stat in ["Pago", "Pendente"] else "Pendente"
 
-                # Data (Date Object - Importante!)
+                # --- DATA COMO OBJETO DE VERDADE PARA COLUNA FORMATADA FUNCIONAR ---
                 try:
                     d_str = str(row.get('data_movimento', ''))
                     safe_date = datetime.strptime(d_str, '%Y-%m-%d').date()
@@ -605,7 +615,7 @@ elif menu == "💰 Financeiro":
 
                 clean_rows.append({
                     "id": safe_id,
-                    "data_movimento": safe_date,  # Agora é objeto Date, não string
+                    "data_movimento": safe_date,
                     "tipo": str(row.get('tipo', '')),
                     "descricao": str(row.get('descricao', '')),
                     "valor": safe_val,
@@ -615,7 +625,6 @@ elif menu == "💰 Financeiro":
 
             df_clean = pd.DataFrame(clean_rows)
 
-            # Configuração segura
             try:
                 col_cfg = {
                     "id": st.column_config.NumberColumn(disabled=True, width="small"),
@@ -623,7 +632,7 @@ elif menu == "💰 Financeiro":
                     "status": st.column_config.SelectboxColumn("Status", options=["Pago", "Pendente"], width="medium",
                                                                required=True),
                     "tipo": st.column_config.TextColumn(disabled=True),
-                    "data_movimento": st.column_config.DateColumn("Data", format="DD/MM/YYYY")
+                    "data_movimento": st.column_config.DateColumn("Data", format="DD/MM/YYYY")  # <-- FORMATAÇÃO AQUI
                 }
 
                 if not df_clean.empty:
@@ -633,12 +642,9 @@ elif menu == "💰 Financeiro":
                     if st.button("💾 Salvar Alterações Financeiras"):
                         changes = 0
                         for i, row in edited.iterrows():
-                            # Busca o ID original no banco para update
                             orig_row = df[df['id'] == row['id']]
                             if not orig_row.empty:
                                 orig = orig_row.iloc[0]
-
-                                # Compara tipos seguros
                                 try:
                                     orig_val = float(orig.get('valor', 0))
                                 except:
@@ -658,7 +664,6 @@ elif menu == "💰 Financeiro":
                         else:
                             st.info("Nada mudou.")
 
-                    # Botões Extras
                     c_down, c_del = st.columns([1, 1])
                     c_down.download_button("Excel", to_excel(edited), "financeiro.xlsx")
 
@@ -673,15 +678,15 @@ elif menu == "💰 Financeiro":
                     st.info("Sem dados neste mês.")
             except Exception as e:
                 st.error(f"Erro ao renderizar tabela: {e}")
-                st.dataframe(df_view)  # Fallback simples
         else:
             st.info("Banco de dados vazio.")
 
 # --- PÁGINA: RELATÓRIOS ---
 elif menu == "📑 Relatórios":
     st.title("Relatórios");
-    d1 = st.date_input("De");
-    d2 = st.date_input("Até")
+    # --- DATA INPUT FORMATADA ---
+    d1 = st.date_input("De", format="DD/MM/YYYY");
+    d2 = st.date_input("Até", format="DD/MM/YYYY")
     if st.button("Gerar"):
         df = get_data("financeiro")
         if not df.empty:
